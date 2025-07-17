@@ -7,6 +7,11 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import Layout from "@/components/layout/Layout";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
+import Events from "./pages/Events";
+import EventDetail from "./pages/EventDetail";
+import CreateEvent from "./pages/CreateEvent";
+import MyEvents from "./pages/MyEvents";
+import Profile from "./pages/Profile";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -25,6 +30,46 @@ const App = () => (
               element={
                 <Layout>
                   <Index />
+                </Layout>
+              } 
+            />
+            <Route 
+              path="/events" 
+              element={
+                <Layout>
+                  <Events />
+                </Layout>
+              } 
+            />
+            <Route 
+              path="/events/create" 
+              element={
+                <Layout>
+                  <CreateEvent />
+                </Layout>
+              } 
+            />
+            <Route 
+              path="/events/:id" 
+              element={
+                <Layout>
+                  <EventDetail />
+                </Layout>
+              } 
+            />
+            <Route 
+              path="/my-events" 
+              element={
+                <Layout>
+                  <MyEvents />
+                </Layout>
+              } 
+            />
+            <Route 
+              path="/profile" 
+              element={
+                <Layout>
+                  <Profile />
                 </Layout>
               } 
             />

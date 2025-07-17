@@ -128,7 +128,7 @@ const Header = () => {
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => navigate('/my-events')}>
                     <Calendar className="mr-2 h-4 w-4" />
-                    <span>我的报名</span>
+                    <span>我的活动</span>
                   </DropdownMenuItem>
                   {!isOrganizer && (
                     <DropdownMenuItem onClick={() => navigate('/become-organizer')}>

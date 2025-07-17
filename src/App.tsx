@@ -12,6 +12,7 @@ import EventDetail from "./pages/EventDetail";
 import CreateEvent from "./pages/CreateEvent";
 import MyEvents from "./pages/MyEvents";
 import Profile from "./pages/Profile";
+import BecomeOrganizer from "./pages/BecomeOrganizer";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -70,6 +71,14 @@ const App = () => (
               element={
                 <Layout>
                   <Profile />
+                </Layout>
+              } 
+            />
+            <Route 
+              path="/become-organizer" 
+              element={
+                <Layout>
+                  <BecomeOrganizer />
                 </Layout>
               } 
             />

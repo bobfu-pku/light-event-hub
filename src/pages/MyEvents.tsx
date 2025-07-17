@@ -24,6 +24,7 @@ interface Event {
 
 interface Registration {
   id: string;
+  event_id: string;
   status: string;
   participant_name: string;
   participant_email: string;
@@ -353,7 +354,7 @@ const MyEvents = () => {
                     </div>
                     
                     <Button variant="outline" size="sm" className="w-full" asChild>
-                      <Link to={`/events/${registration.id.split('-')[0]}`}>
+                      <Link to={`/events/${registration.event_id}`}>
                         查看活动详情
                       </Link>
                     </Button>

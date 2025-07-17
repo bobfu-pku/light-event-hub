@@ -85,7 +85,7 @@ const Header = () => {
                 <Button 
                   variant="premium" 
                   size="sm" 
-                  onClick={() => navigate('/create-event')}
+                  onClick={() => navigate('/events/create')}
                   className="hidden sm:flex"
                 >
                   <Plus className="h-4 w-4 mr-1" />

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -17,8 +17,15 @@ import heroBackground from '@/assets/hero-background.jpg';
 import logoImage from '@/assets/lightevent-logo.png';
 
 const Index = () => {
-  const { user, isOrganizer } = useAuth();
+  const { user, isOrganizer, loading } = useAuth();
   const navigate = useNavigate();
+
+  // 已登录用户默认跳转到活动页面
+  useEffect(() => {
+    if (!loading && user) {
+      navigate('/events');
+    }
+  }, [user, loading, navigate]);
 
   return (
     <div className="flex flex-col">
@@ -62,7 +69,7 @@ const Index = () => {
                     <Button 
                       variant="outline" 
                       size="lg" 
-                      onClick={() => navigate('/create-event')}
+                      onClick={() => navigate('/events/create')}
                       className="text-lg px-8 py-4 bg-white/10 border-white/30 text-white hover:bg-white/20"
                     >
                       <Zap className="mr-2 h-5 w-5" />

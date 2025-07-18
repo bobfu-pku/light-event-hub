@@ -39,6 +39,7 @@ interface Registration {
   id: string;
   status: string;
   payment_amount?: number;
+  verification_code?: string;
 }
 
 const EventDetail = () => {
@@ -96,7 +97,7 @@ const EventDetail = () => {
     try {
       const { data, error } = await supabase
         .from('event_registrations')
-        .select('id, status, payment_amount')
+        .select('id, status, payment_amount, verification_code')
         .eq('event_id', id)
         .eq('user_id', user.id)
         .single();
@@ -136,7 +137,7 @@ const EventDetail = () => {
           participant_name: profile?.nickname || 'Unknown',
           participant_email: profile?.contact_email || user.email,
           participant_phone: profile?.contact_phone || '',
-          status: event.requires_approval ? 'pending' : 'approved',
+          status: event.requires_approval ? 'pending' : (event.is_paid ? 'payment_pending' : 'approved'),
           payment_amount: event.is_paid ? event.price : 0
         });
 
@@ -164,16 +165,21 @@ const EventDetail = () => {
     if (!registration || !event) return;
 
     try {
+      // Generate verification code and update status to paid
+      const verificationCode = await generateVerificationCode();
       const { error } = await supabase
         .from('event_registrations')
-        .update({ status: 'paid' })
+        .update({ 
+          status: 'paid',
+          verification_code: verificationCode
+        })
         .eq('id', registration.id);
 
       if (error) throw error;
 
       toast({
         title: "支付成功",
-        description: "模拟支付完成，您已成功报名"
+        description: `模拟支付完成！您的核验码是: ${verificationCode}`
       });
 
       checkRegistration();
@@ -184,6 +190,12 @@ const EventDetail = () => {
         variant: "destructive"
       });
     }
+  };
+
+  const generateVerificationCode = async () => {
+    const { data, error } = await supabase.rpc('generate_verification_code');
+    if (error) throw error;
+    return data;
   };
 
   const getEventTypeLabel = (type: string) => {
@@ -381,8 +393,19 @@ const EventDetail = () => {
               )}
               
               {registration && (
-                <div className="text-center text-sm text-muted-foreground">
-                  报名状态: {getStatusLabel(registration.status)}
+                <div className="text-center text-sm text-muted-foreground space-y-2">
+                  <div>报名状态: {getStatusLabel(registration.status)}</div>
+                  {registration.verification_code && registration.status === 'paid' && (
+                    <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+                      <p className="text-sm font-medium text-green-800">核验码</p>
+                      <p className="text-lg font-mono font-bold text-green-900">
+                        {registration.verification_code}
+                      </p>
+                      <p className="text-xs text-green-600 mt-1">
+                        请在活动现场出示此核验码
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
               

@@ -5,9 +5,11 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Calendar, MapPin, Users, ArrowLeft, Edit, Trash2, Eye, Check, X, UserCheck } from 'lucide-react';
+import { Calendar, MapPin, Users, ArrowLeft, Edit, Trash2, Eye, Check, X, UserCheck, QrCode } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
+import { Input } from '@/components/ui/input';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 
 interface Event {
   id: string;
@@ -34,6 +36,7 @@ interface Registration {
   created_at: string;
   payment_amount?: number;
   checked_in_at?: string;
+  verification_code?: string;
 }
 
 const ManageEvent = () => {
@@ -44,6 +47,8 @@ const ManageEvent = () => {
   const [event, setEvent] = useState<Event | null>(null);
   const [registrations, setRegistrations] = useState<Registration[]>([]);
   const [loading, setLoading] = useState(true);
+  const [verifyCode, setVerifyCode] = useState('');
+  const [showVerifyDialog, setShowVerifyDialog] = useState(false);
 
   useEffect(() => {
     if (id && user) {
@@ -121,29 +126,6 @@ const ManageEvent = () => {
     }
   };
 
-  const handleApproveRegistration = async (registrationId: string) => {
-    try {
-      const { error } = await supabase
-        .from('event_registrations')
-        .update({ status: 'approved' })
-        .eq('id', registrationId);
-
-      if (error) throw error;
-
-      toast({
-        title: '成功',
-        description: '已通过报名申请'
-      });
-      fetchRegistrations();
-    } catch (error) {
-      console.error('Error approving registration:', error);
-      toast({
-        title: '错误',
-        description: '审核失败',
-        variant: 'destructive'
-      });
-    }
-  };
 
   const handleRejectRegistration = async (registrationId: string) => {
     try {
@@ -192,6 +174,79 @@ const ManageEvent = () => {
       toast({
         title: '错误',
         description: '签到失败',
+        variant: 'destructive'
+      });
+    }
+  };
+
+  const handleVerifyCode = async () => {
+    if (!verifyCode.trim()) {
+      toast({
+        title: '错误',
+        description: '请输入核验码',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    try {
+      // Find registration with this verification code
+      const registration = registrations.find(r => r.verification_code === verifyCode.trim());
+      
+      if (!registration) {
+        toast({
+          title: '错误',
+          description: '核验码无效或已被使用',
+          variant: 'destructive'
+        });
+        return;
+      }
+
+      if (registration.status === 'checked_in') {
+        toast({
+          title: '提示',
+          description: '该核验码已被使用过',
+          variant: 'destructive'
+        });
+        return;
+      }
+
+      // Update registration status to checked_in
+      await handleCheckIn(registration.id);
+      setVerifyCode('');
+      setShowVerifyDialog(false);
+    } catch (error) {
+      console.error('Error verifying code:', error);
+      toast({
+        title: '错误',
+        description: '核验码验证失败',
+        variant: 'destructive'
+      });
+    }
+  };
+
+  const handleApproveAndPayment = async (registrationId: string) => {
+    try {
+      const registration = registrations.find(r => r.id === registrationId);
+      const isPaymentEvent = event?.is_paid;
+      
+      const { error } = await supabase
+        .from('event_registrations')
+        .update({ status: isPaymentEvent ? 'payment_pending' : 'approved' })
+        .eq('id', registrationId);
+
+      if (error) throw error;
+
+      toast({
+        title: '成功',
+        description: isPaymentEvent ? '已通过审核，等待用户支付' : '已通过报名申请'
+      });
+      fetchRegistrations();
+    } catch (error) {
+      console.error('Error approving registration:', error);
+      toast({
+        title: '错误',
+        description: '审核失败',
         variant: 'destructive'
       });
     }
@@ -325,6 +380,46 @@ const ManageEvent = () => {
               <Edit className="h-4 w-4 mr-2" />
               编辑活动
             </Button>
+            <Dialog open={showVerifyDialog} onOpenChange={setShowVerifyDialog}>
+              <DialogTrigger asChild>
+                <Button variant="outline" className="w-full">
+                  <QrCode className="h-4 w-4 mr-2" />
+                  核验码验证
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>输入核验码</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <Input
+                    placeholder="请输入8位核验码"
+                    value={verifyCode}
+                    onChange={(e) => setVerifyCode(e.target.value.toUpperCase())}
+                    maxLength={8}
+                    className="text-center font-mono text-lg"
+                  />
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      className="flex-1"
+                      onClick={() => {
+                        setVerifyCode('');
+                        setShowVerifyDialog(false);
+                      }}
+                    >
+                      取消
+                    </Button>
+                    <Button
+                      className="flex-1"
+                      onClick={handleVerifyCode}
+                    >
+                      验证核验码
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
             <Button
               variant="destructive"
               className="w-full"
@@ -366,6 +461,11 @@ const ManageEvent = () => {
                             签到时间: {formatDate(registration.checked_in_at)}
                           </p>
                         )}
+                        {registration.verification_code && (
+                          <p className="text-xs text-blue-600 mt-1 font-mono">
+                            核验码: {registration.verification_code}
+                          </p>
+                        )}
                       </div>
                       <div className="text-right flex flex-col items-end gap-3">
                         <div className="flex flex-col items-end gap-2">
@@ -382,7 +482,7 @@ const ManageEvent = () => {
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => handleApproveRegistration(registration.id)}
+                                onClick={() => handleApproveAndPayment(registration.id)}
                                 className="text-green-600 hover:bg-green-50"
                               >
                                 <Check className="h-4 w-4 mr-1" />

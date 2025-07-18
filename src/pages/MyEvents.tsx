@@ -31,6 +31,7 @@ interface Registration {
   participant_phone: string;
   created_at: string;
   payment_amount?: number;
+  verification_code?: string;
   events: {
     title: string;
     start_time: string;
@@ -352,6 +353,15 @@ const MyEvents = () => {
                     <div className="text-xs text-muted-foreground mb-4">
                       报名时间: {formatDate(registration.created_at)}
                     </div>
+                    
+                    {registration.verification_code && registration.status === 'paid' && (
+                      <div className="p-2 mb-4 bg-green-50 border border-green-200 rounded text-center">
+                        <p className="text-xs font-medium text-green-800">核验码</p>
+                        <p className="text-sm font-mono font-bold text-green-900">
+                          {registration.verification_code}
+                        </p>
+                      </div>
+                    )}
                     
                     <Button variant="outline" size="sm" className="w-full" asChild>
                       <Link to={`/events/${registration.event_id}`}>

@@ -10,6 +10,7 @@ import Auth from "./pages/Auth";
 import Events from "./pages/Events";
 import EventDetail from "./pages/EventDetail";
 import CreateEvent from "./pages/CreateEvent";
+import ManageEvent from "./pages/ManageEvent";
 import MyEvents from "./pages/MyEvents";
 import Profile from "./pages/Profile";
 import BecomeOrganizer from "./pages/BecomeOrganizer";
@@ -55,6 +56,14 @@ const App = () => (
               element={
                 <Layout>
                   <EventDetail />
+                </Layout>
+              } 
+            />
+            <Route 
+              path="/events/:id/manage" 
+              element={
+                <Layout>
+                  <ManageEvent />
                 </Layout>
               } 
             />

@@ -52,7 +52,7 @@ const Header = () => {
             className="text-sm font-medium text-muted-foreground hover:text-primary transition-colors flex items-center space-x-1"
           >
             <Calendar className="h-4 w-4" />
-            <span>活动</span>
+            <span>发现活动</span>
           </Link>
           
           {isOrganizer && (

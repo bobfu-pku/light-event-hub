@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Calendar, MapPin, Users, ArrowLeft, Edit, Trash2, Eye } from 'lucide-react';
+import { Calendar, MapPin, Users, ArrowLeft, Edit, Trash2, Eye, Check, X, UserCheck } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 
@@ -33,6 +33,7 @@ interface Registration {
   status: string;
   created_at: string;
   payment_amount?: number;
+  checked_in_at?: string;
 }
 
 const ManageEvent = () => {
@@ -115,6 +116,82 @@ const ManageEvent = () => {
       toast({
         title: '错误',
         description: '删除活动失败',
+        variant: 'destructive'
+      });
+    }
+  };
+
+  const handleApproveRegistration = async (registrationId: string) => {
+    try {
+      const { error } = await supabase
+        .from('event_registrations')
+        .update({ status: 'approved' })
+        .eq('id', registrationId);
+
+      if (error) throw error;
+
+      toast({
+        title: '成功',
+        description: '已通过报名申请'
+      });
+      fetchRegistrations();
+    } catch (error) {
+      console.error('Error approving registration:', error);
+      toast({
+        title: '错误',
+        description: '审核失败',
+        variant: 'destructive'
+      });
+    }
+  };
+
+  const handleRejectRegistration = async (registrationId: string) => {
+    try {
+      const { error } = await supabase
+        .from('event_registrations')
+        .update({ status: 'rejected' })
+        .eq('id', registrationId);
+
+      if (error) throw error;
+
+      toast({
+        title: '成功',
+        description: '已拒绝报名申请'
+      });
+      fetchRegistrations();
+    } catch (error) {
+      console.error('Error rejecting registration:', error);
+      toast({
+        title: '错误',
+        description: '审核失败',
+        variant: 'destructive'
+      });
+    }
+  };
+
+  const handleCheckIn = async (registrationId: string) => {
+    try {
+      const { error } = await supabase
+        .from('event_registrations')
+        .update({ 
+          status: 'checked_in',
+          checked_in_at: new Date().toISOString(),
+          checked_in_by: user?.id
+        })
+        .eq('id', registrationId);
+
+      if (error) throw error;
+
+      toast({
+        title: '成功',
+        description: '签到成功'
+      });
+      fetchRegistrations();
+    } catch (error) {
+      console.error('Error checking in:', error);
+      toast({
+        title: '错误',
+        description: '签到失败',
         variant: 'destructive'
       });
     }
@@ -277,19 +354,70 @@ const ManageEvent = () => {
                 <Card key={registration.id}>
                   <CardContent className="p-4">
                     <div className="flex justify-between items-start">
-                      <div>
+                      <div className="flex-1">
                         <h3 className="font-semibold">{registration.participant_name}</h3>
                         <p className="text-sm text-muted-foreground">{registration.participant_email}</p>
                         <p className="text-sm text-muted-foreground">{registration.participant_phone}</p>
                         <p className="text-xs text-muted-foreground mt-2">
                           报名时间: {formatDate(registration.created_at)}
                         </p>
-                      </div>
-                      <div className="text-right">
-                        <Badge>{getStatusLabel(registration.status)}</Badge>
-                        {registration.payment_amount && registration.payment_amount > 0 && (
-                          <p className="text-sm mt-2">¥{registration.payment_amount}</p>
+                        {registration.checked_in_at && (
+                          <p className="text-xs text-green-600 mt-1">
+                            签到时间: {formatDate(registration.checked_in_at)}
+                          </p>
                         )}
+                      </div>
+                      <div className="text-right flex flex-col items-end gap-3">
+                        <div className="flex flex-col items-end gap-2">
+                          <Badge>{getStatusLabel(registration.status)}</Badge>
+                          {registration.payment_amount && registration.payment_amount > 0 && (
+                            <p className="text-sm">¥{registration.payment_amount}</p>
+                          )}
+                        </div>
+                        
+                        {/* Action buttons based on status */}
+                        <div className="flex gap-2">
+                          {registration.status === 'pending' && (
+                            <>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleApproveRegistration(registration.id)}
+                                className="text-green-600 hover:bg-green-50"
+                              >
+                                <Check className="h-4 w-4 mr-1" />
+                                通过
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleRejectRegistration(registration.id)}
+                                className="text-red-600 hover:bg-red-50"
+                              >
+                                <X className="h-4 w-4 mr-1" />
+                                拒绝
+                              </Button>
+                            </>
+                          )}
+                          
+                          {(registration.status === 'approved' || registration.status === 'paid') && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleCheckIn(registration.id)}
+                              className="text-blue-600 hover:bg-blue-50"
+                            >
+                              <UserCheck className="h-4 w-4 mr-1" />
+                              签到
+                            </Button>
+                          )}
+                          
+                          {registration.status === 'checked_in' && (
+                            <Badge variant="secondary" className="text-green-600 bg-green-50">
+                              已签到
+                            </Badge>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </CardContent>

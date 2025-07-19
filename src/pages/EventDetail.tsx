@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Calendar, MapPin, Users, Clock, Phone, Mail, Star, MessageSquare } from 'lucide-react';
+import { Calendar, MapPin, Users, Clock, Phone, Mail, Star, MessageSquare, CreditCard, CheckCircle } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 
@@ -375,17 +375,46 @@ const EventDetail = () => {
                 </div>
               )}
               
-              {registration?.status === 'payment_pending' && event.is_paid ? (
-                <Button 
-                  onClick={simulatePayment}
-                  className="w-full bg-gradient-primary hover:opacity-90"
-                >
-                  模拟支付 ¥{event.price}
-                </Button>
+              {registration ? (
+                <>
+                  {registration.status === 'payment_pending' && event.is_paid ? (
+                    <Button 
+                      onClick={simulatePayment}
+                      className="w-full bg-gradient-primary hover:opacity-90"
+                    >
+                      <CreditCard className="h-4 w-4 mr-2" />
+                      模拟支付 ¥{event.price}
+                    </Button>
+                  ) : registration.status === 'pending' ? (
+                    <Button disabled className="w-full opacity-50">
+                      <Clock className="h-4 w-4 mr-2" />
+                      等待审核中...
+                    </Button>
+                  ) : registration.status === 'paid' ? (
+                    <Button disabled className="w-full bg-green-600">
+                      <CheckCircle className="h-4 w-4 mr-2" />
+                      已支付完成
+                    </Button>
+                  ) : registration.status === 'approved' ? (
+                    <Button disabled className="w-full bg-green-600">
+                      <CheckCircle className="h-4 w-4 mr-2" />
+                      报名成功
+                    </Button>
+                  ) : registration.status === 'checked_in' ? (
+                    <Button disabled className="w-full bg-green-600">
+                      <CheckCircle className="h-4 w-4 mr-2" />
+                      已签到
+                    </Button>
+                  ) : (
+                    <Button disabled className="w-full opacity-50">
+                      {getRegistrationButtonText()}
+                    </Button>
+                  )}
+                </>
               ) : (
                 <Button
                   onClick={handleRegister}
-                  disabled={!canRegister() || !!registration || registering}
+                  disabled={!canRegister() || registering}
                   className="w-full bg-gradient-primary hover:opacity-90 disabled:opacity-50"
                 >
                   {registering ? "报名中..." : getRegistrationButtonText()}

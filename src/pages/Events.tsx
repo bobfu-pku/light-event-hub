@@ -3,10 +3,11 @@ import { Link } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent } from '@/components/ui/card';
-import { Search, Calendar, MapPin, Users } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Search, ChevronDown, ChevronUp } from 'lucide-react';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { useAuth } from '@/contexts/AuthContext';
+import EventCard from '@/components/EventCard';
 
 interface Event {
   id: string;
@@ -34,6 +35,7 @@ const Events = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedType, setSelectedType] = useState('');
+  const [showFinishedEvents, setShowFinishedEvents] = useState(false);
 
   const eventTypes = [
     'conference', 'training', 'social', 'sports', 
@@ -67,21 +69,24 @@ const Events = () => {
     }
   };
 
-  const filteredEvents = events.filter(event => {
+  const now = new Date();
+  
+  // 分离即将开始和已结束的活动
+  const upcomingEvents = events.filter(event => {
+    const startTime = new Date(event.start_time);
     const matchesSearch = event.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          event.description.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesType = !selectedType || event.event_type === selectedType;
-    return matchesSearch && matchesType;
-  });
+    return startTime > now && matchesSearch && matchesType;
+  }).sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime()); // 按开始时间由近到远
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('zh-CN', {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
+  const finishedEvents = events.filter(event => {
+    const endTime = new Date(event.end_time);
+    const matchesSearch = event.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         event.description.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesType = !selectedType || event.event_type === selectedType;
+    return endTime <= now && matchesSearch && matchesType;
+  }).sort((a, b) => new Date(b.end_time).getTime() - new Date(a.end_time).getTime()); // 按结束时间从最近到最远
 
   const getEventTypeLabel = (type: string) => {
     const typeMap: Record<string, string> = {
@@ -161,74 +166,51 @@ const Events = () => {
         </select>
       </div>
 
-      {/* Events Grid */}
-      {filteredEvents.length === 0 ? (
-        <div className="text-center py-12">
-          <p className="text-muted-foreground">暂无符合条件的活动</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredEvents.map((event) => (
-            <Link key={event.id} to={`/events/${event.id}`}>
-              <Card className="group hover:shadow-lg transition-all duration-300 hover:scale-[1.02]">
-                {event.cover_image_url ? (
-                  <img
-                    src={event.cover_image_url}
-                    alt={event.title}
-                    className="w-full h-48 object-cover rounded-t-lg"
-                  />
-                ) : (
-                  <div className="w-full h-48 bg-gradient-subtle rounded-t-lg flex items-center justify-center">
-                    <Calendar className="h-12 w-12 text-muted-foreground" />
-                  </div>
-                )}
-                <CardContent className="p-4">
-                  <div className="flex items-start justify-between mb-2">
-                    <Badge variant="secondary" className="text-xs">
-                      {getEventTypeLabel(event.event_type)}
-                    </Badge>
-                    {event.is_paid && (
-                      <Badge variant="outline" className="text-xs">
-                        ¥{event.price}
-                      </Badge>
-                    )}
-                  </div>
-                  
-                  <h3 className="font-semibold text-lg mb-2 line-clamp-2 group-hover:text-primary transition-colors">
-                    {event.title}
-                  </h3>
-                  
-                  <p className="text-muted-foreground text-sm mb-3 line-clamp-2">
-                    {event.description}
-                  </p>
-                  
-                  <div className="space-y-2 text-sm text-muted-foreground">
-                    <div className="flex items-center gap-2">
-                      <Calendar className="h-4 w-4" />
-                      <span>{formatDate(event.start_time)}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <MapPin className="h-4 w-4" />
-                      <span className="line-clamp-1">{event.location}</span>
-                    </div>
-                    {event.max_participants && (
-                      <div className="flex items-center gap-2">
-                        <Users className="h-4 w-4" />
-                        <span>限{event.max_participants}人</span>
-                      </div>
-                    )}
-                  </div>
-                  
-                  <div className="mt-3 pt-3 border-t">
-                    <p className="text-xs text-muted-foreground">
-                      主办方: {event.profiles?.organizer_name || event.profiles?.nickname || '未知'}
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            </Link>
-          ))}
-        </div>
+      {/* 即将开始的活动 */}
+      <div className="mb-8">
+        <h2 className="text-2xl font-bold mb-6">即将开始的活动</h2>
+        {upcomingEvents.length === 0 ? (
+          <div className="text-center py-12">
+            <p className="text-muted-foreground">暂无即将开始的活动</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {upcomingEvents.map((event) => (
+              <EventCard key={event.id} event={event} />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* 已结束的活动 */}
+      {finishedEvents.length > 0 && (
+        <Collapsible open={showFinishedEvents} onOpenChange={setShowFinishedEvents}>
+          <Card>
+            <CardHeader>
+              <CollapsibleTrigger asChild>
+                <Button variant="ghost" className="w-full justify-between p-6">
+                  <CardTitle className="flex items-center gap-2">
+                    已结束活动 ({finishedEvents.length})
+                  </CardTitle>
+                  {showFinishedEvents ? (
+                    <ChevronUp className="h-4 w-4" />
+                  ) : (
+                    <ChevronDown className="h-4 w-4" />
+                  )}
+                </Button>
+              </CollapsibleTrigger>
+            </CardHeader>
+            <CollapsibleContent>
+              <CardContent className="pt-0">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {finishedEvents.map((event) => (
+                    <EventCard key={event.id} event={event} />
+                  ))}
+                </div>
+              </CardContent>
+            </CollapsibleContent>
+          </Card>
+        </Collapsible>
       )}
     </div>
   );

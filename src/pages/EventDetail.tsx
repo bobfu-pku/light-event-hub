@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Calendar, MapPin, Users, Clock, Phone, Mail, Star, MessageSquare, CreditCard, CheckCircle } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
+import EventDiscussion from '@/components/EventDiscussion';
 
 interface Event {
   id: string;
@@ -331,17 +332,7 @@ const EventDetail = () => {
             </TabsContent>
             
             <TabsContent value="discussion" className="mt-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <MessageSquare className="h-5 w-5" />
-                    活动讨论
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-muted-foreground">讨论功能开发中...</p>
-                </CardContent>
-              </Card>
+              <EventDiscussion eventId={event.id} organizerId={event.organizer_id} />
             </TabsContent>
             
             <TabsContent value="reviews" className="mt-6">

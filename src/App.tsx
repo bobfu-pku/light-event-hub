@@ -76,6 +76,14 @@ const App = () => (
               } 
             />
             <Route 
+              path="/organizer" 
+              element={
+                <Layout>
+                  <MyEvents />
+                </Layout>
+              } 
+            />
+            <Route 
               path="/profile" 
               element={
                 <Layout>

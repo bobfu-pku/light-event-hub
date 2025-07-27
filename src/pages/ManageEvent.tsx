@@ -5,11 +5,12 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Calendar, MapPin, Users, ArrowLeft, Edit, Trash2, Eye, Check, X, UserCheck, QrCode } from 'lucide-react';
+import { Calendar, MapPin, Users, ArrowLeft, Edit, Trash2, Eye, Check, X, UserCheck, QrCode, Scan } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import QRCodeScanner from '@/components/QRCodeScanner';
 
 interface Event {
   id: string;
@@ -225,6 +226,59 @@ const ManageEvent = () => {
     }
   };
 
+  const handleQRScanSuccess = async (scannedCode: string) => {
+    setVerifyCode(scannedCode);
+    await handleVerifyCodeWithValue(scannedCode);
+  };
+
+  const handleVerifyCodeWithValue = async (code?: string) => {
+    const codeToVerify = code || verifyCode.trim();
+    
+    if (!codeToVerify) {
+      toast({
+        title: '错误',
+        description: '请输入核验码',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    try {
+      // Find registration with this verification code
+      const registration = registrations.find(r => r.verification_code === codeToVerify);
+      
+      if (!registration) {
+        toast({
+          title: '错误',
+          description: '核验码无效或已被使用',
+          variant: 'destructive'
+        });
+        return;
+      }
+
+      if (registration.status === 'checked_in') {
+        toast({
+          title: '提示',
+          description: '该核验码已被使用过',
+          variant: 'destructive'
+        });
+        return;
+      }
+
+      // Update registration status to checked_in
+      await handleCheckIn(registration.id);
+      setVerifyCode('');
+      setShowVerifyDialog(false);
+    } catch (error) {
+      console.error('Error verifying code:', error);
+      toast({
+        title: '错误',
+        description: '核验码验证失败',
+        variant: 'destructive'
+      });
+    }
+  };
+
   const handleApproveAndPayment = async (registrationId: string) => {
     try {
       const registration = registrations.find(r => r.id === registrationId);
@@ -384,7 +438,7 @@ const ManageEvent = () => {
               <DialogTrigger asChild>
                 <Button variant="outline" className="w-full">
                   <QrCode className="h-4 w-4 mr-2" />
-                  核验码验证
+                  手动验证
                 </Button>
               </DialogTrigger>
               <DialogContent>
@@ -420,6 +474,12 @@ const ManageEvent = () => {
                 </div>
               </DialogContent>
             </Dialog>
+            <QRCodeScanner onScanSuccess={handleQRScanSuccess}>
+              <Button variant="outline" className="w-full">
+                <Scan className="h-4 w-4 mr-2" />
+                扫描二维码
+              </Button>
+            </QRCodeScanner>
             <Button
               variant="destructive"
               className="w-full"

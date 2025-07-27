@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Camera, X, QrCode } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { BarcodeScanner } from '@capacitor-community/barcode-scanner';
 import { Capacitor } from '@capacitor/core';
+import QrScanner from 'qr-scanner';
 
 interface QRCodeScannerProps {
   onScanSuccess: (code: string) => void;
@@ -15,41 +16,79 @@ const QRCodeScanner: React.FC<QRCodeScannerProps> = ({ onScanSuccess, children }
   const [isOpen, setIsOpen] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [isSupported, setIsSupported] = useState(false);
+  const [isNative, setIsNative] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const qrScannerRef = useRef<QrScanner | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
-    // Check if the device supports camera
-    setIsSupported(Capacitor.isNativePlatform());
+    const checkSupport = async () => {
+      const isNativePlatform = Capacitor.isNativePlatform();
+      setIsNative(isNativePlatform);
+      
+      if (isNativePlatform) {
+        setIsSupported(true);
+      } else {
+        // Check if camera is available for web
+        const hasCamera = await QrScanner.hasCamera();
+        setIsSupported(hasCamera);
+      }
+    };
+    
+    checkSupport();
   }, []);
 
   const startScan = async () => {
     try {
       setIsScanning(true);
       
-      // Check camera permission
-      const status = await BarcodeScanner.checkPermission({ force: true });
-      
-      if (status.granted) {
-        // Hide background to make camera visible
-        document.body.style.background = 'transparent';
-        BarcodeScanner.hideBackground();
+      if (isNative) {
+        // Native app scanning
+        const status = await BarcodeScanner.checkPermission({ force: true });
         
-        const result = await BarcodeScanner.startScan();
-        
-        if (result.hasContent) {
-          onScanSuccess(result.content);
-          setIsOpen(false);
+        if (status.granted) {
+          document.body.style.background = 'transparent';
+          BarcodeScanner.hideBackground();
+          
+          const result = await BarcodeScanner.startScan();
+          
+          if (result.hasContent) {
+            onScanSuccess(result.content);
+            setIsOpen(false);
+            toast({
+              title: '扫描成功',
+              description: `识别到核验码: ${result.content}`
+            });
+          }
+        } else {
           toast({
-            title: '扫描成功',
-            description: `识别到核验码: ${result.content}`
+            title: '权限错误',
+            description: '需要摄像头权限才能扫描二维码',
+            variant: 'destructive'
           });
         }
       } else {
-        toast({
-          title: '权限错误',
-          description: '需要摄像头权限才能扫描二维码',
-          variant: 'destructive'
-        });
+        // Web browser scanning
+        if (videoRef.current) {
+          qrScannerRef.current = new QrScanner(
+            videoRef.current,
+            (result) => {
+              onScanSuccess(result.data);
+              setIsOpen(false);
+              toast({
+                title: '扫描成功',
+                description: `识别到核验码: ${result.data}`
+              });
+              stopScan();
+            },
+            {
+              highlightScanRegion: true,
+              highlightCodeOutline: true,
+            }
+          );
+          
+          await qrScannerRef.current.start();
+        }
       }
     } catch (error) {
       console.error('Error scanning QR code:', error);
@@ -58,16 +97,21 @@ const QRCodeScanner: React.FC<QRCodeScannerProps> = ({ onScanSuccess, children }
         description: '无法启动二维码扫描器',
         variant: 'destructive'
       });
-    } finally {
       setIsScanning(false);
       stopScan();
     }
   };
 
   const stopScan = () => {
-    BarcodeScanner.showBackground();
-    BarcodeScanner.stopScan();
-    document.body.style.background = '';
+    if (isNative) {
+      BarcodeScanner.showBackground();
+      BarcodeScanner.stopScan();
+      document.body.style.background = '';
+    } else {
+      qrScannerRef.current?.stop();
+      qrScannerRef.current?.destroy();
+      qrScannerRef.current = null;
+    }
     setIsScanning(false);
   };
 
@@ -127,9 +171,18 @@ const QRCodeScanner: React.FC<QRCodeScannerProps> = ({ onScanSuccess, children }
           ) : (
             <div className="text-center py-4">
               <div className="relative">
-                <div className="animate-pulse bg-muted rounded-lg h-64 flex items-center justify-center">
-                  <p className="text-muted-foreground">正在扫描...</p>
-                </div>
+                {isNative ? (
+                  <div className="animate-pulse bg-muted rounded-lg h-64 flex items-center justify-center">
+                    <p className="text-muted-foreground">正在扫描...</p>
+                  </div>
+                ) : (
+                  <video 
+                    ref={videoRef}
+                    className="w-full h-64 rounded-lg bg-black"
+                    playsInline
+                    muted
+                  />
+                )}
                 <div className="absolute inset-0 border-2 border-primary rounded-lg animate-pulse"></div>
               </div>
               <p className="text-sm text-muted-foreground mt-4">

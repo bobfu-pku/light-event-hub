@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { Building, User } from 'lucide-react';
+import { sanitizeInput, validateEmail, validateRequired } from '@/lib/validation';
 
 const BecomeOrganizer = () => {
   const { user, profile } = useAuth();
@@ -21,36 +22,80 @@ const BecomeOrganizer = () => {
     contactEmail: profile?.contact_email || '',
     contactPhone: profile?.contact_phone || '',
   });
+  const [applicationStatus, setApplicationStatus] = useState<string | null>(null);
+
+  // Check if user already has an application
+  useEffect(() => {
+    const checkApplicationStatus = async () => {
+      if (!user) return;
+      
+      const { data, error } = await supabase
+        .from('organizer_applications')
+        .select('status')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      
+      if (!error && data) {
+        setApplicationStatus(data.status);
+      }
+    };
+    
+    checkApplicationStatus();
+  }, [user]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
 
+    // Input validation
+    const organizerName = sanitizeInput(formData.organizerName);
+    const organizerDescription = sanitizeInput(formData.organizerDescription);
+    const contactEmail = sanitizeInput(formData.contactEmail);
+    const contactPhone = sanitizeInput(formData.contactPhone);
+
+    if (!validateRequired(organizerName)) {
+      toast({
+        title: "验证失败",
+        description: "请输入主办方名称",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!validateEmail(contactEmail)) {
+      toast({
+        title: "验证失败",
+        description: "请输入有效的邮箱地址",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setLoading(true);
     try {
-      // 更新用户角色为包含 organizer
+      // Create secure application instead of directly updating roles
       const { error } = await supabase
-        .from('profiles')
-        .update({
-          roles: ['user', 'organizer'],
-          organizer_name: formData.organizerName,
-          organizer_description: formData.organizerDescription,
-          contact_email: formData.contactEmail,
-          contact_phone: formData.contactPhone,
-        })
-        .eq('user_id', user.id);
+        .from('organizer_applications')
+        .insert({
+          user_id: user.id,
+          organizer_name: organizerName,
+          organizer_description: organizerDescription,
+          contact_email: contactEmail,
+          contact_phone: contactPhone,
+        });
 
       if (error) throw error;
 
       toast({
-        title: "申请成功",
-        description: "您已成功成为主办方！",
+        title: "申请已提交",
+        description: "您的主办方申请已提交，请等待管理员审核",
       });
 
-      // 刷新页面以更新角色状态
-      window.location.href = '/';
+      setApplicationStatus('pending');
     } catch (error) {
-      console.error('Error becoming organizer:', error);
+      console.error('Error submitting organizer application:', error);
       toast({
         title: "申请失败",
         description: "请稍后重试",
@@ -95,6 +140,31 @@ const BecomeOrganizer = () => {
             </CardTitle>
           </CardHeader>
           <CardContent>
+            {applicationStatus && (
+              <div className={`mb-6 p-4 rounded-lg ${
+                applicationStatus === 'pending' ? 'bg-yellow-50 border border-yellow-200' :
+                applicationStatus === 'approved' ? 'bg-green-50 border border-green-200' :
+                'bg-red-50 border border-red-200'
+              }`}>
+                <div className="flex items-center gap-2 mb-2">
+                  <div className={`w-2 h-2 rounded-full ${
+                    applicationStatus === 'pending' ? 'bg-yellow-500' :
+                    applicationStatus === 'approved' ? 'bg-green-500' :
+                    'bg-red-500'
+                  }`} />
+                  <span className="font-medium">
+                    {applicationStatus === 'pending' && '申请审核中'}
+                    {applicationStatus === 'approved' && '申请已通过'}
+                    {applicationStatus === 'rejected' && '申请被拒绝'}
+                  </span>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  {applicationStatus === 'pending' && '您的主办方申请正在审核中，请耐心等待'}
+                  {applicationStatus === 'approved' && '恭喜！您已成为主办方，现在可以创建活动了'}
+                  {applicationStatus === 'rejected' && '您的申请被拒绝，请联系管理员了解详情'}
+                </p>
+              </div>
+            )}
             <form onSubmit={handleSubmit} className="space-y-6">
               <div className="space-y-2">
                 <Label htmlFor="organizerName">主办方名称 *</Label>
@@ -164,10 +234,14 @@ const BecomeOrganizer = () => {
                 </Button>
                 <Button
                   type="submit"
-                  disabled={loading || !formData.organizerName || !formData.contactEmail}
+                  disabled={loading || !formData.organizerName || !formData.contactEmail || applicationStatus === 'pending' || applicationStatus === 'approved'}
                   className="flex-1"
                 >
-                  {loading ? '申请中...' : '申请成为主办方'}
+                  {loading ? '申请中...' : 
+                   applicationStatus === 'pending' ? '申请审核中' :
+                   applicationStatus === 'approved' ? '已通过审核' :
+                   applicationStatus === 'rejected' ? '重新申请' :
+                   '申请成为主办方'}
                 </Button>
               </div>
             </form>

@@ -327,6 +327,51 @@ export type Database = {
           },
         ]
       }
+      organizer_applications: {
+        Row: {
+          admin_notes: string | null
+          contact_email: string
+          contact_phone: string | null
+          created_at: string
+          id: string
+          organizer_description: string | null
+          organizer_name: string
+          reviewed_at: string | null
+          reviewed_by: string | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          admin_notes?: string | null
+          contact_email: string
+          contact_phone?: string | null
+          created_at?: string
+          id?: string
+          organizer_description?: string | null
+          organizer_name: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          admin_notes?: string | null
+          contact_email?: string
+          contact_phone?: string | null
+          created_at?: string
+          id?: string
+          organizer_description?: string | null
+          organizer_name?: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -377,9 +422,17 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      approve_organizer_application: {
+        Args: { application_id: string }
+        Returns: boolean
+      }
       generate_verification_code: {
         Args: Record<PropertyKey, never>
         Returns: string
+      }
+      has_role: {
+        Args: { user_id: string; role_name: string }
+        Returns: boolean
       }
     }
     Enums: {

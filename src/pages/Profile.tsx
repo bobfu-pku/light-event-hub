@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -28,6 +29,7 @@ interface Profile {
 const Profile = () => {
   const { user } = useAuth();
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -135,45 +137,6 @@ const Profile = () => {
     }
   };
 
-  const applyForOrganizer = async () => {
-    if (!user || !formData.organizer_name.trim()) {
-      toast({
-        title: "错误",
-        description: "请先填写组织名称",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    try {
-      const { error } = await supabase
-        .from('profiles')
-        .upsert([{
-          user_id: user.id,
-          organizer_name: formData.organizer_name.trim(),
-          organizer_description: formData.organizer_description.trim() || null,
-          roles: ['user', 'organizer']
-        }], { 
-          onConflict: 'user_id'
-        });
-
-      if (error) throw error;
-
-      toast({
-        title: "成功",
-        description: "已成功申请成为主办方"
-      });
-
-      fetchProfile();
-    } catch (error: any) {
-      console.error('Error applying for organizer:', error);
-      toast({
-        title: "错误",
-        description: error.message || "申请失败，请稍后重试",
-        variant: "destructive"
-      });
-    }
-  };
 
   if (!user) {
     return (
@@ -376,11 +339,10 @@ const Profile = () => {
                   </Button>
                 ) : (
                   <Button 
-                    onClick={applyForOrganizer}
-                    disabled={saving || !formData.organizer_name.trim()}
+                    onClick={() => navigate('/become-organizer')}
                     className="bg-gradient-primary hover:opacity-90"
                   >
-                    {saving ? "申请中..." : "申请成为主办方"}
+                    申请成为主办方
                   </Button>
                 )}
               </div>

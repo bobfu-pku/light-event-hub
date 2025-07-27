@@ -29,9 +29,15 @@ const QRCodeScanner: React.FC<QRCodeScannerProps> = ({ onScanSuccess, children }
       if (isNativePlatform) {
         setIsSupported(true);
       } else {
-        // Check if camera is available for web
-        const hasCamera = await QrScanner.hasCamera();
-        setIsSupported(hasCamera);
+        // For web browsers, check if we have getUserMedia support
+        try {
+          const hasCamera = await QrScanner.hasCamera();
+          setIsSupported(hasCamera);
+        } catch (error) {
+          // Fallback: assume camera is available on mobile browsers
+          const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+          setIsSupported(isMobile || !!navigator.mediaDevices?.getUserMedia);
+        }
       }
     };
     

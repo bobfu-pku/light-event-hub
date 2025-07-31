@@ -13,8 +13,8 @@ const TermsOfService = () => {
               返回登录
             </Button>
           </Link>
-          <h1 className="text-3xl font-bold text-foreground mb-2">服务条款</h1>
-          <p className="text-muted-foreground">最后更新时间：2025年7月</p>
+          <h1 className="text-3xl font-bold text-foreground mb-2 text-center">服务条款</h1>
+          <p className="text-muted-foreground text-center">最后更新时间：2025年7月</p>
         </div>
 
         <Card>

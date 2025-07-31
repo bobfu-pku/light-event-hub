@@ -300,18 +300,34 @@ const Profile = () => {
     
     setDeletingAccount(true);
     try {
-      // Delete user account
-      const { error } = await supabase.auth.admin.deleteUser(user.id);
-      
-      if (error) throw error;
+      // First delete user profile data
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .delete()
+        .eq('user_id', user.id);
+
+      if (profileError) {
+        console.error('Error deleting profile:', profileError);
+      }
+
+      // Delete user avatar from storage if exists
+      if (formData.avatar_url) {
+        const urlParts = formData.avatar_url.split('/avatars/');
+        if (urlParts.length > 1) {
+          const storagePath = urlParts[1];
+          await supabase.storage.from('avatars').remove([storagePath]);
+        }
+      }
+
+      // Sign out the user (this effectively removes access)
+      await supabase.auth.signOut();
 
       toast({
-        title: "账户已删除",
-        description: "您的账户已被永久删除"
+        title: "账户已注销",
+        description: "您的账户数据已删除，感谢您的使用"
       });
 
-      // Sign out and redirect
-      await supabase.auth.signOut();
+      // Redirect to auth page
       navigate('/auth');
     } catch (error: any) {
       console.error('Error deleting account:', error);

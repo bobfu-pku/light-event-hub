@@ -224,7 +224,7 @@ const Profile = () => {
   const isOrganizer = profile?.roles?.includes('organizer');
   return <div className="container mx-auto px-4 py-8 max-w-4xl">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold gradient-text">个人中心</h1>
+        <h1 className="text-3xl font-bold gradient-text">账户设置</h1>
         <p className="text-muted-foreground mt-2">管理您的个人资料和账户设置</p>
       </div>
 

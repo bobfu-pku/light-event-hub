@@ -300,40 +300,36 @@ const Profile = () => {
     
     setDeletingAccount(true);
     try {
-      // First delete user profile data
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .delete()
-        .eq('user_id', user.id);
-
-      if (profileError) {
-        console.error('Error deleting profile:', profileError);
+      // Get current session token
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error('No active session');
       }
 
-      // Delete user avatar from storage if exists
-      if (formData.avatar_url) {
-        const urlParts = formData.avatar_url.split('/avatars/');
-        if (urlParts.length > 1) {
-          const storagePath = urlParts[1];
-          await supabase.storage.from('avatars').remove([storagePath]);
-        }
-      }
-
-      // Sign out the user (this effectively removes access)
-      await supabase.auth.signOut();
-
-      toast({
-        title: "账户已注销",
-        description: "您的账户数据已删除，感谢您的使用"
+      // Call the Edge Function to delete the user
+      const { data, error } = await supabase.functions.invoke('delete-user', {
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
       });
 
-      // Redirect to auth page
+      if (error) {
+        throw error;
+      }
+
+      toast({
+        title: "账户已删除",
+        description: "您的账户已被永久删除，感谢您的使用"
+      });
+
+      // Clear local storage and redirect
+      localStorage.clear();
       navigate('/auth');
     } catch (error: any) {
       console.error('Error deleting account:', error);
       toast({
-        title: "错误",
-        description: error.message || "删除账户失败，请稍后重试",
+        title: "删除失败",
+        description: error.message || "删除账户时发生错误",
         variant: "destructive"
       });
     } finally {

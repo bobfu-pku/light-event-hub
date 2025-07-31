@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Calendar, MapPin, Users, Settings, Eye } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Calendar, MapPin, Users, Settings, Eye, Filter } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 
 interface Event {
@@ -46,6 +47,7 @@ const MyEvents = () => {
   const [myRegistrations, setMyRegistrations] = useState<Registration[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('organized');
+  const [statusFilter, setStatusFilter] = useState('all');
 
   useEffect(() => {
     if (user) {
@@ -159,6 +161,44 @@ const MyEvents = () => {
     });
   };
 
+  // 获取活动的实际状态（基于时间判断）
+  const getActualEventStatus = (event: Event) => {
+    const now = new Date();
+    const startTime = new Date(event.start_time);
+    const endTime = new Date(event.start_time);
+    endTime.setHours(endTime.getHours() + 2); // 假设活动持续2小时，或者可以使用end_time
+
+    if (event.status === 'draft') return 'draft';
+    if (endTime < now) return 'ended';
+    return 'published';
+  };
+
+  // 按距离今天由近到远排序
+  const sortEventsByTime = (events: Event[]) => {
+    const now = new Date();
+    return [...events].sort((a, b) => {
+      const timeA = Math.abs(new Date(a.start_time).getTime() - now.getTime());
+      const timeB = Math.abs(new Date(b.start_time).getTime() - now.getTime());
+      return timeA - timeB;
+    });
+  };
+
+  // 筛选活动
+  const getFilteredEvents = () => {
+    let filtered = myEvents;
+    
+    if (statusFilter !== 'all') {
+      filtered = myEvents.filter(event => {
+        const actualStatus = getActualEventStatus(event);
+        return actualStatus === statusFilter;
+      });
+    }
+    
+    return sortEventsByTime(filtered);
+  };
+
+  const filteredEvents = getFilteredEvents();
+
   if (!user) {
     return (
       <div className="container mx-auto px-4 py-8">
@@ -219,9 +259,27 @@ const MyEvents = () => {
               </Link>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {myEvents.map((event) => (
-                <Card key={event.id} className="group hover:shadow-lg transition-all duration-300">
+            <>
+              <div className="flex items-center gap-4 mb-6">
+                <Filter className="h-5 w-5 text-muted-foreground" />
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="w-48">
+                    <SelectValue placeholder="筛选活动状态" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">全部活动</SelectItem>
+                    <SelectItem value="published">已发布</SelectItem>
+                    <SelectItem value="ended">已结束</SelectItem>
+                    <SelectItem value="draft">草稿</SelectItem>
+                  </SelectContent>
+                </Select>
+                <span className="text-sm text-muted-foreground">
+                  共{filteredEvents.length}个活动
+                </span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filteredEvents.map((event) => (
+                  <Card key={event.id} className="group hover:shadow-lg transition-all duration-300">
                   {event.cover_image_url ? (
                     <img
                       src={event.cover_image_url}
@@ -288,8 +346,9 @@ const MyEvents = () => {
                     </div>
                   </CardContent>
                 </Card>
-              ))}
-            </div>
+                ))}
+              </div>
+            </>
           )}
         </TabsContent>
 

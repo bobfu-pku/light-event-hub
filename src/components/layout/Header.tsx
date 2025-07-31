@@ -34,9 +34,7 @@ const Header = () => {
         <div className="flex items-center space-x-3">
           {user ? <>
               {/* Search */}
-              <Button variant="ghost" size="icon" className="hidden sm:flex">
-                <Search className="h-4 w-4" />
-              </Button>
+              
 
               {/* Notifications */}
               <Button variant="ghost" size="icon" className="hidden sm:flex">

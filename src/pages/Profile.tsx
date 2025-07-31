@@ -229,7 +229,7 @@ const Profile = () => {
       </div>
 
       <Tabs defaultValue="profile" className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="profile" className="flex items-center gap-2">
             <User className="h-4 w-4" />
             <span className="hidden sm:inline">个人资料</span>
@@ -237,10 +237,6 @@ const Profile = () => {
           <TabsTrigger value="organizer" className="flex items-center gap-2">
             <Shield className="h-4 w-4" />
             <span className="hidden sm:inline">主办方资料</span>
-          </TabsTrigger>
-          <TabsTrigger value="notifications" className="flex items-center gap-2">
-            <Bell className="h-4 w-4" />
-            <span className="hidden sm:inline">通知</span>
           </TabsTrigger>
           <TabsTrigger value="settings" className="flex items-center gap-2">
             <Settings className="h-4 w-4" />
@@ -356,97 +352,97 @@ const Profile = () => {
           </Card>
         </TabsContent>
 
-        <TabsContent value="notifications" className="mt-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>通知设置</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h4 className="font-medium">活动报名通知</h4>
-                    <p className="text-sm text-muted-foreground">
-                      接收报名审核结果和活动变更通知
-                    </p>
-                  </div>
-                  <Switch defaultChecked />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h4 className="font-medium">活动提醒</h4>
-                    <p className="text-sm text-muted-foreground">
-                      在活动开始前收到提醒
-                    </p>
-                  </div>
-                  <Switch defaultChecked />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h4 className="font-medium">讨论区互动</h4>
-                    <p className="text-sm text-muted-foreground">
-                      接收@我和回复通知
-                    </p>
-                  </div>
-                  <Switch defaultChecked />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h4 className="font-medium">活动推荐</h4>
-                    <p className="text-sm text-muted-foreground">
-                      根据兴趣推荐相关活动
-                    </p>
-                  </div>
-                  <Switch />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
         <TabsContent value="settings" className="mt-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>账户设置</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-4">
-                <div>
-                  <h4 className="font-medium mb-2">账户信息</h4>
-                  <div className="space-y-2 text-sm">
-                    <p><span className="text-muted-foreground">用户ID:</span> {user.id}</p>
-                    <p><span className="text-muted-foreground">注册时间:</span> {new Date(user.created_at || '').toLocaleDateString('zh-CN')}</p>
-                    <p><span className="text-muted-foreground">角色:</span> 
-                      {profile?.roles?.map(role => <Badge key={role} variant="secondary" className="ml-2">
-                          {role === 'user' ? '用户' : role === 'organizer' ? '主办方' : role}
-                        </Badge>)}
+          <div className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>通知设置</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="font-medium">活动报名通知</h4>
+                      <p className="text-sm text-muted-foreground">
+                        接收报名审核结果和活动变更通知
+                      </p>
+                    </div>
+                    <Switch defaultChecked />
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="font-medium">活动提醒</h4>
+                      <p className="text-sm text-muted-foreground">
+                        在活动开始前收到提醒
+                      </p>
+                    </div>
+                    <Switch defaultChecked />
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="font-medium">讨论区互动</h4>
+                      <p className="text-sm text-muted-foreground">
+                        接收@我和回复通知
+                      </p>
+                    </div>
+                    <Switch defaultChecked />
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="font-medium">活动推荐</h4>
+                      <p className="text-sm text-muted-foreground">
+                        根据兴趣推荐相关活动
+                      </p>
+                    </div>
+                    <Switch />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>账户设置</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-4">
+                  <div>
+                    <h4 className="font-medium mb-2">账户信息</h4>
+                    <div className="space-y-2 text-sm">
+                      <p><span className="text-muted-foreground">用户ID:</span> {user.id}</p>
+                      <p><span className="text-muted-foreground">注册时间:</span> {new Date(user.created_at || '').toLocaleDateString('zh-CN')}</p>
+                      <p><span className="text-muted-foreground">角色:</span> 
+                        {profile?.roles?.map(role => <Badge key={role} variant="secondary" className="ml-2">
+                            {role === 'user' ? '用户' : role === 'organizer' ? '主办方' : role}
+                          </Badge>)}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="pt-4 border-t">
+                    <h4 className="font-medium mb-2 text-destructive">危险操作</h4>
+                    <p className="text-sm text-muted-foreground mb-4">
+                      这些操作无法撤销，请谨慎操作。
+                    </p>
+                    <div className="space-y-2">
+                      <Button variant="outline" size="sm" disabled>
+                        更改密码
+                      </Button>
+                      <Button variant="destructive" size="sm" disabled>
+                        删除账户
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      * 这些功能正在开发中
                     </p>
                   </div>
                 </div>
-
-                <div className="pt-4 border-t">
-                  <h4 className="font-medium mb-2 text-destructive">危险操作</h4>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    这些操作无法撤销，请谨慎操作。
-                  </p>
-                  <div className="space-y-2">
-                    <Button variant="outline" size="sm" disabled>
-                      更改密码
-                    </Button>
-                    <Button variant="destructive" size="sm" disabled>
-                      删除账户
-                    </Button>
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-2">
-                    * 这些功能正在开发中
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
       </Tabs>
     </div>;

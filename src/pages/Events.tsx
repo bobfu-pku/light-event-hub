@@ -155,7 +155,7 @@ const Events = () => {
         <select
           value={selectedType}
           onChange={(e) => setSelectedType(e.target.value)}
-          className="px-3 py-2 rounded-md border border-input bg-background text-sm w-40"
+          className="px-3 py-2 rounded-md border border-input bg-background text-sm"
         >
           <option value="">所有类型</option>
           {eventTypes.map(type => (

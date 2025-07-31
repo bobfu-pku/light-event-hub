@@ -172,9 +172,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
 
       if (error) {
+        let errorMessage = "登录失败";
+        
+        // 检查是否为无效凭据错误
+        if (error.message === "Invalid login credentials") {
+          // 检查邮箱是否存在于profiles表中
+          const { data: profileData } = await supabase
+            .from('profiles')
+            .select('user_id')
+            .eq('contact_email', email)
+            .single();
+          
+          if (!profileData) {
+            errorMessage = "账号不存在，请先注册账号";
+          } else {
+            errorMessage = "密码错误，请重试";
+          }
+        } else {
+          errorMessage = error.message;
+        }
+        
         toast({
           title: "登录失败",
-          description: error.message,
+          description: errorMessage,
           variant: "destructive",
         });
       } else if (data.user) {

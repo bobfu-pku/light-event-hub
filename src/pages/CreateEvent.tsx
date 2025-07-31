@@ -541,7 +541,7 @@ const CreateEvent = () => {
                 name="contact_info"
                 value={formData.contact_info}
                 onChange={handleInputChange}
-                placeholder="提供参与者可以联系您的方式，如微信群、QQ群、电话等"
+                placeholder="提供参与者可以联系您的方式，如微信、电话、邮箱等"
                 rows={3}
               />
             </div>

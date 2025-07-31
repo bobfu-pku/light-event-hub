@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -9,7 +9,8 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { User, Settings, Bell, Shield } from 'lucide-react';
+import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
+import { User, Settings, Bell, Shield, Upload } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 
@@ -33,6 +34,8 @@ const Profile = () => {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [formData, setFormData] = useState({
     nickname: '',
     bio: '',
@@ -93,6 +96,82 @@ const Profile = () => {
       ...prev,
       [name]: value
     }));
+  };
+
+  const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !user) return;
+
+    // 检查文件类型
+    if (!file.type.startsWith('image/')) {
+      toast({
+        title: "错误",
+        description: "请选择图片文件",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    // 检查文件大小 (5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      toast({
+        title: "错误",
+        description: "图片大小不能超过5MB",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setUploading(true);
+    try {
+      // 生成文件名
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${user.id}/avatar.${fileExt}`;
+
+      // 删除旧头像
+      if (formData.avatar_url) {
+        const oldPath = formData.avatar_url.split('/').pop();
+        if (oldPath) {
+          await supabase.storage
+            .from('avatars')
+            .remove([`${user.id}/${oldPath}`]);
+        }
+      }
+
+      // 上传新头像
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(fileName, file, {
+          upsert: true
+        });
+
+      if (uploadError) throw uploadError;
+
+      // 获取公开URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(fileName);
+
+      // 更新表单数据
+      setFormData(prev => ({
+        ...prev,
+        avatar_url: publicUrl
+      }));
+
+      toast({
+        title: "成功",
+        description: "头像上传成功"
+      });
+    } catch (error: any) {
+      console.error('Error uploading avatar:', error);
+      toast({
+        title: "错误",
+        description: error.message || "上传失败，请稍后重试",
+        variant: "destructive"
+      });
+    } finally {
+      setUploading(false);
+    }
   };
 
   const handleSaveProfile = async () => {
@@ -234,15 +313,41 @@ const Profile = () => {
               </div>
 
               <div>
-                <Label htmlFor="avatar_url">头像链接</Label>
-                <Input
-                  id="avatar_url"
-                  name="avatar_url"
-                  value={formData.avatar_url}
-                  onChange={handleInputChange}
-                  placeholder="https://example.com/avatar.jpg"
-                  type="url"
-                />
+                <Label>头像</Label>
+                <div className="flex items-center gap-4">
+                  <Avatar className="w-20 h-20">
+                    <AvatarImage 
+                      src={formData.avatar_url} 
+                      alt="用户头像" 
+                    />
+                    <AvatarFallback className="text-2xl">
+                      {formData.nickname ? formData.nickname.charAt(0).toUpperCase() : 
+                       user.email ? user.email.charAt(0).toUpperCase() : '用'}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handleAvatarUpload}
+                      className="hidden"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={uploading}
+                      className="w-full md:w-auto"
+                    >
+                      <Upload className="w-4 h-4 mr-2" />
+                      {uploading ? "上传中..." : "上传头像"}
+                    </Button>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      支持 JPG、PNG 格式，最大 5MB
+                    </p>
+                  </div>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

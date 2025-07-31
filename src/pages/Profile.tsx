@@ -10,9 +10,10 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
-import { User, Settings, Bell, Shield, Upload } from 'lucide-react';
+import { User, Settings, Bell, Shield, Upload, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 interface Profile {
   id: string;
   user_id: string;
@@ -37,6 +38,11 @@ const Profile = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [formData, setFormData] = useState({
     nickname: '',
@@ -46,6 +52,11 @@ const Profile = () => {
     contact_phone: '',
     organizer_name: '',
     organizer_description: ''
+  });
+  const [passwordData, setPasswordData] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: ''
   });
   useEffect(() => {
     if (user) {
@@ -203,6 +214,114 @@ const Profile = () => {
       });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handlePasswordInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setPasswordData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+
+  const handleChangePassword = async () => {
+    if (!passwordData.currentPassword || !passwordData.newPassword || !passwordData.confirmPassword) {
+      toast({
+        title: "错误",
+        description: "请填写所有密码字段",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (passwordData.newPassword !== passwordData.confirmPassword) {
+      toast({
+        title: "错误",
+        description: "新密码与确认密码不一致",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (passwordData.newPassword.length < 6) {
+      toast({
+        title: "错误",
+        description: "新密码长度至少为6位",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setChangingPassword(true);
+    try {
+      // First reauthenticate with current password
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: user?.email || '',
+        password: passwordData.currentPassword
+      });
+
+      if (signInError) {
+        throw new Error('当前密码错误');
+      }
+
+      // Update password
+      const { error } = await supabase.auth.updateUser({
+        password: passwordData.newPassword
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "成功",
+        description: "密码修改成功"
+      });
+
+      // Clear password form
+      setPasswordData({
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: ''
+      });
+    } catch (error: any) {
+      console.error('Error changing password:', error);
+      toast({
+        title: "错误",
+        description: error.message || "密码修改失败，请稍后重试",
+        variant: "destructive"
+      });
+    } finally {
+      setChangingPassword(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!user) return;
+    
+    setDeletingAccount(true);
+    try {
+      // Delete user account
+      const { error } = await supabase.auth.admin.deleteUser(user.id);
+      
+      if (error) throw error;
+
+      toast({
+        title: "账户已删除",
+        description: "您的账户已被永久删除"
+      });
+
+      // Sign out and redirect
+      await supabase.auth.signOut();
+      navigate('/auth');
+    } catch (error: any) {
+      console.error('Error deleting account:', error);
+      toast({
+        title: "错误",
+        description: error.message || "删除账户失败，请稍后重试",
+        variant: "destructive"
+      });
+    } finally {
+      setDeletingAccount(false);
     }
   };
   if (!user) {
@@ -407,38 +526,137 @@ const Profile = () => {
               <CardHeader>
                 <CardTitle>账户设置</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-4">
-                  <div>
-                    <h4 className="font-medium mb-2">账户信息</h4>
-                    <div className="space-y-2 text-sm">
-                      <p><span className="text-muted-foreground">用户ID:</span> {user.id}</p>
-                      <p><span className="text-muted-foreground">注册时间:</span> {new Date(user.created_at || '').toLocaleDateString('zh-CN')}</p>
-                      <p><span className="text-muted-foreground">角色:</span> 
-                        {profile?.roles?.map(role => <Badge key={role} variant="secondary" className="ml-2">
-                            {role === 'user' ? '用户' : role === 'organizer' ? '主办方' : role}
-                          </Badge>)}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="pt-4 border-t">
-                    <h4 className="font-medium mb-2 text-destructive">危险操作</h4>
-                    <p className="text-sm text-muted-foreground mb-4">
-                      这些操作无法撤销，请谨慎操作。
+              <CardContent className="space-y-6">
+                <div>
+                  <h4 className="font-medium mb-2">账户信息</h4>
+                  <div className="space-y-2 text-sm">
+                    <p><span className="text-muted-foreground">用户ID:</span> {user.id}</p>
+                    <p><span className="text-muted-foreground">注册时间:</span> {new Date(user.created_at || '').toLocaleDateString('zh-CN')}</p>
+                    <p><span className="text-muted-foreground">角色:</span> 
+                      {profile?.roles?.map(role => (
+                        <Badge key={role} variant="secondary" className="ml-2">
+                          {role === 'user' ? '用户' : role === 'organizer' ? '主办方' : role}
+                        </Badge>
+                      ))}
                     </p>
-                    <div className="space-y-2">
-                      <Button variant="outline" size="sm" disabled>
-                        更改密码
-                      </Button>
-                      <Button variant="destructive" size="sm" disabled>
+                  </div>
+                </div>
+
+                <div className="pt-4 border-t">
+                  <h4 className="font-medium mb-4">修改密码</h4>
+                  <div className="space-y-4">
+                    <div>
+                      <Label htmlFor="currentPassword">当前密码</Label>
+                      <div className="relative">
+                        <Input
+                          id="currentPassword"
+                          name="currentPassword"
+                          type={showCurrentPassword ? "text" : "password"}
+                          value={passwordData.currentPassword}
+                          onChange={handlePasswordInputChange}
+                          placeholder="输入当前密码"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="absolute right-0 top-0 h-full px-3"
+                          onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                        >
+                          {showCurrentPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="newPassword">新密码</Label>
+                      <div className="relative">
+                        <Input
+                          id="newPassword"
+                          name="newPassword"
+                          type={showNewPassword ? "text" : "password"}
+                          value={passwordData.newPassword}
+                          onChange={handlePasswordInputChange}
+                          placeholder="输入新密码（至少6位）"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="absolute right-0 top-0 h-full px-3"
+                          onClick={() => setShowNewPassword(!showNewPassword)}
+                        >
+                          {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="confirmPassword">确认新密码</Label>
+                      <div className="relative">
+                        <Input
+                          id="confirmPassword"
+                          name="confirmPassword"
+                          type={showConfirmPassword ? "text" : "password"}
+                          value={passwordData.confirmPassword}
+                          onChange={handlePasswordInputChange}
+                          placeholder="再次输入新密码"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="absolute right-0 top-0 h-full px-3"
+                          onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                        >
+                          {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </Button>
+                      </div>
+                    </div>
+
+                    <Button 
+                      onClick={handleChangePassword} 
+                      disabled={changingPassword}
+                      className="bg-gradient-primary hover:opacity-90"
+                    >
+                      {changingPassword ? "修改中..." : "修改密码"}
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="pt-4 border-t">
+                  <h4 className="font-medium mb-2 text-destructive">危险操作</h4>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    这些操作无法撤销，请谨慎操作。
+                  </p>
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button variant="destructive" size="sm">
                         删除账户
                       </Button>
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-2">
-                      * 这些功能正在开发中
-                    </p>
-                  </div>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>确认删除账户</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          此操作无法撤销。删除账户将永久删除您的所有数据，包括个人资料、活动记录和相关信息。
+                          <br />
+                          <br />
+                          确定要删除您的账户吗？
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>取消</AlertDialogCancel>
+                        <AlertDialogAction
+                          onClick={handleDeleteAccount}
+                          disabled={deletingAccount}
+                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        >
+                          {deletingAccount ? "删除中..." : "确认删除"}
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
                 </div>
               </CardContent>
             </Card>

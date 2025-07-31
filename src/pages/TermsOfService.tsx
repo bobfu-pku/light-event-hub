@@ -3,10 +3,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ArrowLeft } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-
 const TermsOfService = () => {
-  return (
-    <div className="min-h-screen bg-background">
+  return <div className="min-h-screen bg-background">
       <div className="container mx-auto px-4 py-8 max-w-4xl">
         <div className="mb-6">
           <Link to="/auth">
@@ -16,7 +14,7 @@ const TermsOfService = () => {
             </Button>
           </Link>
           <h1 className="text-3xl font-bold text-foreground mb-2">服务条款</h1>
-          <p className="text-muted-foreground">最后更新时间：2024年1月</p>
+          <p className="text-muted-foreground">最后更新时间：2025年7月</p>
         </div>
 
         <Card>
@@ -99,15 +97,13 @@ const TermsOfService = () => {
                 如果您对这些服务条款有任何疑问，请通过以下方式联系我们：
               </p>
               <ul className="list-disc pl-6 text-muted-foreground space-y-1">
-                <li>邮箱：support@lightevent.com</li>
-                <li>电话：400-123-4567</li>
+                <li>邮箱：bomingfu@foxmail.com</li>
+                
               </ul>
             </section>
           </CardContent>
         </Card>
       </div>
-    </div>
-  );
+    </div>;
 };
-
 export default TermsOfService;

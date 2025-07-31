@@ -282,20 +282,65 @@ const CreateEvent = () => {
             </div>
 
             <div>
-              <Label htmlFor="cover_image">上传封面图片</Label>
+              <Label>上传封面图片</Label>
+              <div className="flex gap-4 mt-2">
+                {/* Left side - Image placeholder/preview */}
+                <div className="w-48 h-28 border-2 border-dashed border-border rounded-lg flex items-center justify-center bg-muted/50 relative overflow-hidden">
+                  {formData.cover_image ? (
+                    <>
+                      <img
+                        src={URL.createObjectURL(formData.cover_image)}
+                        alt="封面预览"
+                        className="w-full h-full object-cover"
+                      />
+                      <div className="absolute inset-0 bg-black/50 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => document.getElementById('cover_image')?.click()}
+                        >
+                          替换
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => setFormData(prev => ({ ...prev, cover_image: null }))}
+                        >
+                          删除
+                        </Button>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-center cursor-pointer" onClick={() => document.getElementById('cover_image')?.click()}>
+                      <div className="text-2xl mb-1">📷</div>
+                      <div className="text-xs text-muted-foreground">点击上传</div>
+                    </div>
+                  )}
+                </div>
+                
+                {/* Right side - Upload suggestions */}
+                <div className="flex-1 text-sm text-muted-foreground">
+                  <div className="bg-muted/30 p-3 rounded-lg">
+                    <div className="font-medium mb-2">活动海报建议：</div>
+                    <div className="space-y-1">
+                      <div>1、尺寸：1080*640px，jpg或png格式，不超过4M</div>
+                      <div>2、精美的图片，能有效提升报名率，并有机会被小编推荐</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Hidden file input */}
               <Input
                 id="cover_image"
                 name="cover_image"
                 type="file"
                 accept="image/*"
                 onChange={handleFileChange}
-                className="cursor-pointer"
+                className="hidden"
               />
-              {formData.cover_image && (
-                <p className="text-xs text-muted-foreground mt-1">
-                  已选择: {formData.cover_image.name}
-                </p>
-              )}
             </div>
           </CardContent>
         </Card>

@@ -76,7 +76,7 @@ const Header = () => {
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={() => navigate('/profile')}>
                     <User className="mr-2 h-4 w-4" />
-                    <span>个人资料</span>
+                    <span>账户设置</span>
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => navigate('/my-events')}>
                     <Calendar className="mr-2 h-4 w-4" />

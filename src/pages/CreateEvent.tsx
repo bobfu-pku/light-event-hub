@@ -22,28 +22,28 @@ const CreateEvent = () => {
     event_type: 'conference',
     start_time: '',
     end_time: '',
-    location: '',
+    location_type: 'offline', // 'online' or 'offline'
+    online_link: '',
+    province: '',
+    city: '',
+    district: '',
     detailed_address: '',
-    cover_image_url: '',
+    cover_image: null as File | null,
     max_participants: '',
     registration_deadline: '',
     requires_approval: false,
     is_paid: false,
     price: '',
     price_description: '',
-    contact_info: '',
-    tags: ''
+    contact_info: ''
   });
 
-  const eventTypes = [
-    { value: 'conference', label: '会议' },
-    { value: 'training', label: '培训' },
-    { value: 'social', label: '社交' },
-    { value: 'sports', label: '运动' },
-    { value: 'performance', label: '演出' },
-    { value: 'workshop', label: '工作坊' },
-    { value: 'meetup', label: '聚会' },
-    { value: 'other', label: '其他' }
+  const provinces = [
+    '北京市', '天津市', '上海市', '重庆市', '河北省', '山西省', '辽宁省', '吉林省',
+    '黑龙江省', '江苏省', '浙江省', '安徽省', '福建省', '江西省', '山东省', '河南省',
+    '湖北省', '湖南省', '广东省', '海南省', '四川省', '贵州省', '云南省', '陕西省',
+    '甘肃省', '青海省', '台湾省', '内蒙古自治区', '广西壮族自治区', '西藏自治区',
+    '宁夏回族自治区', '新疆维吾尔自治区', '香港特别行政区', '澳门特别行政区'
   ];
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -61,6 +61,39 @@ const CreateEvent = () => {
     }));
   };
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setFormData(prev => ({
+        ...prev,
+        cover_image: file
+      }));
+    }
+  };
+
+  const uploadCoverImage = async (file: File): Promise<string | null> => {
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Date.now()}.${fileExt}`;
+      const filePath = `event-covers/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      const { data } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(filePath);
+
+      return data.publicUrl;
+    } catch (error) {
+      console.error('Error uploading image:', error);
+      return null;
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent, saveAsDraft = false) => {
     e.preventDefault();
     
@@ -74,10 +107,28 @@ const CreateEvent = () => {
     }
 
     // Validation
-    if (!formData.title.trim() || !formData.description.trim() || !formData.location.trim()) {
+    if (!formData.title.trim() || !formData.description.trim()) {
       toast({
         title: "错误",
         description: "请填写所有必填字段",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (formData.location_type === 'online' && !formData.online_link.trim()) {
+      toast({
+        title: "错误",
+        description: "请填写线上活动链接",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (formData.location_type === 'offline' && (!formData.province || !formData.city || !formData.detailed_address.trim())) {
+      toast({
+        title: "错误",
+        description: "请完整填写线下活动地址信息",
         variant: "destructive"
       });
       return;
@@ -104,23 +155,50 @@ const CreateEvent = () => {
     setLoading(true);
 
     try {
+      // Upload cover image if provided
+      let coverImageUrl = null;
+      if (formData.cover_image) {
+        coverImageUrl = await uploadCoverImage(formData.cover_image);
+        if (!coverImageUrl) {
+          toast({
+            title: "错误",
+            description: "封面图片上传失败",
+            variant: "destructive"
+          });
+          setLoading(false);
+          return;
+        }
+      }
+
+      // Build location string based on type
+      let location = '';
+      let detailed_address = null;
+      
+      if (formData.location_type === 'online') {
+        location = '线上活动';
+        detailed_address = formData.online_link.trim();
+      } else {
+        location = `${formData.province}${formData.city}${formData.district || ''}`;
+        detailed_address = formData.detailed_address.trim();
+      }
+
       const eventData = {
         title: formData.title.trim(),
         description: formData.description.trim(),
         event_type: formData.event_type as 'conference' | 'training' | 'social' | 'sports' | 'performance' | 'workshop' | 'meetup' | 'other',
         start_time: formData.start_time,
         end_time: formData.end_time,
-        location: formData.location.trim(),
-        detailed_address: formData.detailed_address.trim() || null,
-        cover_image_url: formData.cover_image_url.trim() || null,
+        location: location,
+        detailed_address: detailed_address,
+        cover_image_url: coverImageUrl,
         max_participants: formData.max_participants ? parseInt(formData.max_participants) : null,
         registration_deadline: formData.registration_deadline || null,
         requires_approval: formData.requires_approval,
-        is_paid: formData.is_paid,
-        price: formData.is_paid && formData.price ? parseFloat(formData.price) : null,
-        price_description: formData.is_paid ? formData.price_description.trim() || null : null,
+        is_paid: false, // Always false since payment is under development
+        price: null,
+        price_description: null,
         contact_info: formData.contact_info.trim() || null,
-        tags: formData.tags ? formData.tags.split(',').map(tag => tag.trim()).filter(tag => tag) : null,
+        tags: null, // Removed tags functionality
         organizer_id: user.id,
         status: (saveAsDraft ? 'draft' : 'published') as 'draft' | 'published'
       };
@@ -189,23 +267,6 @@ const CreateEvent = () => {
               />
             </div>
 
-            <div>
-              <Label htmlFor="event_type">活动类型 *</Label>
-              <select
-                id="event_type"
-                name="event_type"
-                value={formData.event_type}
-                onChange={handleInputChange}
-                className="w-full px-3 py-2 rounded-md border border-input bg-background"
-                required
-              >
-                {eventTypes.map(type => (
-                  <option key={type.value} value={type.value}>
-                    {type.label}
-                  </option>
-                ))}
-              </select>
-            </div>
 
             <div>
               <Label htmlFor="description">活动描述 *</Label>
@@ -221,26 +282,20 @@ const CreateEvent = () => {
             </div>
 
             <div>
-              <Label htmlFor="cover_image_url">封面图片链接</Label>
+              <Label htmlFor="cover_image">上传封面图片</Label>
               <Input
-                id="cover_image_url"
-                name="cover_image_url"
-                value={formData.cover_image_url}
-                onChange={handleInputChange}
-                placeholder="https://example.com/image.jpg"
-                type="url"
+                id="cover_image"
+                name="cover_image"
+                type="file"
+                accept="image/*"
+                onChange={handleFileChange}
+                className="cursor-pointer"
               />
-            </div>
-
-            <div>
-              <Label htmlFor="tags">活动标签</Label>
-              <Input
-                id="tags"
-                name="tags"
-                value={formData.tags}
-                onChange={handleInputChange}
-                placeholder="用逗号分隔，如：技术,互联网,创业"
-              />
+              {formData.cover_image && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  已选择: {formData.cover_image.name}
+                </p>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -277,27 +332,90 @@ const CreateEvent = () => {
             </div>
 
             <div>
-              <Label htmlFor="location">活动地点 *</Label>
-              <Input
-                id="location"
-                name="location"
-                value={formData.location}
+              <Label htmlFor="location_type">活动地点 *</Label>
+              <select
+                id="location_type"
+                name="location_type"
+                value={formData.location_type}
                 onChange={handleInputChange}
-                placeholder="城市或场馆名称"
+                className="w-full px-3 py-2 rounded-md border border-input bg-background"
                 required
-              />
+              >
+                <option value="offline">线下场地举办</option>
+                <option value="online">线上活动</option>
+              </select>
             </div>
 
-            <div>
-              <Label htmlFor="detailed_address">详细地址</Label>
-              <Input
-                id="detailed_address"
-                name="detailed_address"
-                value={formData.detailed_address}
-                onChange={handleInputChange}
-                placeholder="具体地址，方便参与者找到"
-              />
-            </div>
+            {formData.location_type === 'online' && (
+              <div>
+                <Label htmlFor="online_link">线上活动链接 *</Label>
+                <Input
+                  id="online_link"
+                  name="online_link"
+                  value={formData.online_link}
+                  onChange={handleInputChange}
+                  placeholder="请输入会议链接或直播链接"
+                  required
+                />
+              </div>
+            )}
+
+            {formData.location_type === 'offline' && (
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <Label htmlFor="province">省份 *</Label>
+                    <select
+                      id="province"
+                      name="province"
+                      value={formData.province}
+                      onChange={handleInputChange}
+                      className="w-full px-3 py-2 rounded-md border border-input bg-background"
+                      required
+                    >
+                      <option value="">请选择省份</option>
+                      {provinces.map(province => (
+                        <option key={province} value={province}>
+                          {province}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <Label htmlFor="city">城市 *</Label>
+                    <Input
+                      id="city"
+                      name="city"
+                      value={formData.city}
+                      onChange={handleInputChange}
+                      placeholder="请输入城市"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="district">区县</Label>
+                    <Input
+                      id="district"
+                      name="district"
+                      value={formData.district}
+                      onChange={handleInputChange}
+                      placeholder="请输入区县"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <Label htmlFor="detailed_address">详细地址 *</Label>
+                  <Input
+                    id="detailed_address"
+                    name="detailed_address"
+                    value={formData.detailed_address}
+                    onChange={handleInputChange}
+                    placeholder="具体地址，方便参与者找到"
+                    required
+                  />
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
 
@@ -354,42 +472,14 @@ const CreateEvent = () => {
             <div className="flex items-center space-x-2">
               <Switch
                 id="is_paid"
-                checked={formData.is_paid}
-                onCheckedChange={(checked) => handleSwitchChange('is_paid', checked)}
+                checked={false}
+                disabled={true}
               />
-              <Label htmlFor="is_paid">收费活动</Label>
+              <Label htmlFor="is_paid" className="text-muted-foreground">收费活动</Label>
             </div>
-
-            {formData.is_paid && (
-              <>
-                <div>
-                  <Label htmlFor="price">活动费用 (元) *</Label>
-                  <Input
-                    id="price"
-                    name="price"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={formData.price}
-                    onChange={handleInputChange}
-                    placeholder="0.00"
-                    required={formData.is_paid}
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="price_description">费用说明</Label>
-                  <Textarea
-                    id="price_description"
-                    name="price_description"
-                    value={formData.price_description}
-                    onChange={handleInputChange}
-                    placeholder="说明费用包含的内容，如材料费、餐费等"
-                    rows={3}
-                  />
-                </div>
-              </>
-            )}
+            <div className="text-sm text-muted-foreground bg-muted p-3 rounded-md">
+              💡 支付功能开发中，暂时只支持免费活动
+            </div>
           </CardContent>
         </Card>
 

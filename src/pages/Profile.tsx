@@ -130,11 +130,13 @@ const Profile = () => {
 
       // 删除旧头像
       if (formData.avatar_url) {
-        const oldPath = formData.avatar_url.split('/').pop();
-        if (oldPath) {
+        // 从完整URL中提取存储路径
+        const urlParts = formData.avatar_url.split('/avatars/');
+        if (urlParts.length > 1) {
+          const storagePath = urlParts[1];
           await supabase.storage
             .from('avatars')
-            .remove([`${user.id}/${oldPath}`]);
+            .remove([storagePath]);
         }
       }
 

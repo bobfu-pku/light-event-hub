@@ -208,7 +208,14 @@ const Auth = () => {
 
         <div className="text-center mt-6">
           <p className="text-white/60 text-sm">
-            登录即表示您同意我们的服务条款和隐私政策
+            登录即表示您同意我们的{' '}
+            <a href="/terms" className="text-white/80 hover:text-white underline">
+              服务条款
+            </a>
+            {' '}和{' '}
+            <a href="/privacy" className="text-white/80 hover:text-white underline">
+              隐私政策
+            </a>
           </p>
         </div>
       </div>

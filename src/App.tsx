@@ -14,6 +14,8 @@ import ManageEvent from "./pages/ManageEvent";
 import MyEvents from "./pages/MyEvents";
 import Profile from "./pages/Profile";
 import BecomeOrganizer from "./pages/BecomeOrganizer";
+import TermsOfService from "./pages/TermsOfService";
+import PrivacyPolicy from "./pages/PrivacyPolicy";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -27,6 +29,8 @@ const App = () => (
         <BrowserRouter>
           <Routes>
             <Route path="/auth" element={<Auth />} />
+            <Route path="/terms" element={<TermsOfService />} />
+            <Route path="/privacy" element={<PrivacyPolicy />} />
             <Route 
               path="/" 
               element={

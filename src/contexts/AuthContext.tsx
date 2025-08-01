@@ -137,15 +137,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
 
       if (error) {
+        let errorMessage = "注册失败";
+        
+        // 检查是否为邮箱已注册的错误
+        if (error.message.includes("User already registered") || 
+            error.message.includes("already registered") ||
+            error.message.includes("already been registered") ||
+            error.message.includes("Email address is already registered")) {
+          errorMessage = "该邮箱已注册账号，请直接登录或换个邮箱注册";
+        } else {
+          errorMessage = error.message;
+        }
+        
         toast({
           title: "注册失败",
-          description: error.message,
+          description: errorMessage,
           variant: "destructive",
+          duration: 5000,
         });
       } else {
         toast({
           title: "注册成功",
           description: "请检查您的邮箱完成验证",
+          duration: 5000,
         });
       }
 
@@ -196,11 +210,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           title: "登录失败",
           description: errorMessage,
           variant: "destructive",
+          duration: 5000,
         });
       } else if (data.user) {
         toast({
           title: "登录成功",
           description: "欢迎回来！",
+          duration: 5000,
         });
         // 强制页面刷新以确保干净的状态
         window.location.href = '/';

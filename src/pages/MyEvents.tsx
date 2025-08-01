@@ -42,12 +42,13 @@ interface Registration {
 }
 
 const MyEvents = () => {
-  const { user } = useAuth();
+  const { user, isOrganizer } = useAuth();
   const [myEvents, setMyEvents] = useState<Event[]>([]);
   const [myRegistrations, setMyRegistrations] = useState<Registration[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('organized');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [registrationStatusFilter, setRegistrationStatusFilter] = useState('all');
 
   useEffect(() => {
     if (user) {
@@ -100,20 +101,6 @@ const MyEvents = () => {
     }
   };
 
-  const getEventTypeLabel = (type: string) => {
-    const typeMap: Record<string, string> = {
-      conference: '会议',
-      training: '培训',
-      social: '社交',
-      sports: '运动',
-      performance: '演出',
-      workshop: '工作坊',
-      meetup: '聚会',
-      other: '其他'
-    };
-    return typeMap[type] || type;
-  };
-
   const getStatusLabel = (status: string) => {
     const statusMap: Record<string, string> = {
       draft: '草稿',
@@ -126,8 +113,8 @@ const MyEvents = () => {
       pending: '待审核',
       approved: '已通过',
       rejected: '已拒绝',
-      payment_pending: '待支付',
-      paid: '已支付',
+      payment_pending: '待付款',
+      paid: '已报名',
       checked_in: '已签到'
     };
     return statusMap[status] || status;
@@ -166,21 +153,54 @@ const MyEvents = () => {
     const now = new Date();
     const startTime = new Date(event.start_time);
     const endTime = new Date(event.start_time);
-    endTime.setHours(endTime.getHours() + 2); // 假设活动持续2小时，或者可以使用end_time
+    endTime.setHours(endTime.getHours() + 2); // 假设活动持续2小时
 
     if (event.status === 'draft') return 'draft';
     if (endTime < now) return 'ended';
     return 'published';
   };
 
-  // 按距离今天由近到远排序
-  const sortEventsByTime = (events: Event[]) => {
-    const now = new Date();
-    return [...events].sort((a, b) => {
-      const timeA = Math.abs(new Date(a.start_time).getTime() - now.getTime());
-      const timeB = Math.abs(new Date(b.start_time).getTime() - now.getTime());
-      return timeA - timeB;
-    });
+  // 排序活动
+  const sortEvents = (events: Event[], filter: string) => {
+    const eventsWithStatus = events.map(event => ({
+      ...event,
+      actualStatus: getActualEventStatus(event)
+    }));
+
+    if (filter === 'all') {
+      // 全部活动：已发布（早到晚）> 草稿（早到晚）> 已结束（晚到早）
+      return eventsWithStatus.sort((a, b) => {
+        const statusOrder = { published: 1, draft: 2, ended: 3 };
+        const statusA = statusOrder[a.actualStatus as keyof typeof statusOrder];
+        const statusB = statusOrder[b.actualStatus as keyof typeof statusOrder];
+        
+        if (statusA !== statusB) {
+          return statusA - statusB;
+        }
+        
+        // 相同状态内的排序
+        const timeA = new Date(a.start_time).getTime();
+        const timeB = new Date(b.start_time).getTime();
+        
+        if (a.actualStatus === 'ended') {
+          return timeB - timeA; // 已结束：晚到早
+        } else {
+          return timeA - timeB; // 已发布和草稿：早到晚
+        }
+      });
+    } else {
+      // 单一状态筛选
+      return eventsWithStatus.sort((a, b) => {
+        const timeA = new Date(a.start_time).getTime();
+        const timeB = new Date(b.start_time).getTime();
+        
+        if (filter === 'ended') {
+          return timeB - timeA; // 已结束：晚到早
+        } else {
+          return timeA - timeB; // 已发布和草稿：早到晚
+        }
+      });
+    }
   };
 
   // 筛选活动
@@ -194,10 +214,80 @@ const MyEvents = () => {
       });
     }
     
-    return sortEventsByTime(filtered);
+    return sortEvents(filtered, statusFilter);
+  };
+
+  // 获取报名活动的实际状态（基于时间和报名状态判断）
+  const getActualRegistrationStatus = (registration: Registration) => {
+    const now = new Date();
+    const startTime = new Date(registration.events.start_time);
+    const endTime = new Date(registration.events.start_time);
+    endTime.setHours(endTime.getHours() + 2); // 假设活动持续2小时
+
+    // 如果活动已结束，状态为已结束
+    if (endTime < now) return 'ended';
+    
+    // 否则返回原始报名状态
+    return registration.status;
+  };
+
+  // 排序报名活动
+  const sortRegistrations = (registrations: Registration[], filter: string) => {
+    const registrationsWithStatus = registrations.map(registration => ({
+      ...registration,
+      actualStatus: getActualRegistrationStatus(registration)
+    }));
+
+    if (filter === 'all') {
+      // 全部活动：已结束排最后（晚到早），其他活动排前面（早到晚）
+      return registrationsWithStatus.sort((a, b) => {
+        const aIsEnded = a.actualStatus === 'ended';
+        const bIsEnded = b.actualStatus === 'ended';
+        
+        if (aIsEnded !== bIsEnded) {
+          return aIsEnded ? 1 : -1; // 已结束排后面
+        }
+        
+        const timeA = new Date(a.events.start_time).getTime();
+        const timeB = new Date(b.events.start_time).getTime();
+        
+        if (aIsEnded && bIsEnded) {
+          return timeB - timeA; // 已结束：晚到早
+        } else {
+          return timeA - timeB; // 其他：早到晚
+        }
+      });
+    } else {
+      // 单一状态筛选
+      return registrationsWithStatus.sort((a, b) => {
+        const timeA = new Date(a.events.start_time).getTime();
+        const timeB = new Date(b.events.start_time).getTime();
+        
+        if (filter === 'ended') {
+          return timeB - timeA; // 已结束：晚到早
+        } else {
+          return timeA - timeB; // 其他类型：早到晚
+        }
+      });
+    }
+  };
+
+  // 筛选报名活动
+  const getFilteredRegistrations = () => {
+    let filtered = myRegistrations;
+    
+    if (registrationStatusFilter !== 'all') {
+      filtered = myRegistrations.filter(registration => {
+        const actualStatus = getActualRegistrationStatus(registration);
+        return actualStatus === registrationStatusFilter;
+      });
+    }
+    
+    return sortRegistrations(filtered, registrationStatusFilter);
   };
 
   const filteredEvents = getFilteredEvents();
+  const filteredRegistrations = getFilteredRegistrations();
 
   if (!user) {
     return (
@@ -234,11 +324,19 @@ const MyEvents = () => {
           <h1 className="text-3xl font-bold gradient-text">我的活动</h1>
           <p className="text-muted-foreground mt-2">管理您主办和参与的活动</p>
         </div>
-        <Link to="/events/create">
-          <Button className="bg-gradient-primary hover:opacity-90">
-            创建新活动
-          </Button>
-        </Link>
+        {isOrganizer ? (
+          <Link to="/events/create">
+            <Button className="bg-gradient-primary hover:opacity-90">
+              创建新活动
+            </Button>
+          </Link>
+        ) : (
+          <Link to="/become-organizer">
+            <Button className="bg-gradient-primary hover:opacity-90">
+              成为主办方
+            </Button>
+          </Link>
+        )}
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
@@ -248,7 +346,17 @@ const MyEvents = () => {
         </TabsList>
 
         <TabsContent value="organized" className="mt-6">
-          {myEvents.length === 0 ? (
+          {!isOrganizer ? (
+            <div className="text-center py-12">
+              <Calendar className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <p className="text-muted-foreground mb-4">您还不是活动主办方，成为主办方后可以发布活动</p>
+              <Link to="/become-organizer">
+                <Button className="bg-gradient-primary hover:opacity-90">
+                  成为主办方
+                </Button>
+              </Link>
+            </div>
+          ) : myEvents.length === 0 ? (
             <div className="text-center py-12">
               <Calendar className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
               <p className="text-muted-foreground mb-4">您还没有主办过任何活动</p>
@@ -293,15 +401,12 @@ const MyEvents = () => {
                   )}
                   
                   <CardContent className="p-4">
-                    <div className="flex items-start justify-between mb-2">
-                      <Badge variant="secondary" className="text-xs">
-                        {getEventTypeLabel(event.event_type)}
-                      </Badge>
+                    <div className="flex items-start justify-end mb-2">
                       <Badge 
-                        variant={getStatusColor(event.status) as any}
+                        variant={getStatusColor(getActualEventStatus(event)) as any}
                         className="text-xs"
                       >
-                        {getStatusLabel(event.status)}
+                        {getStatusLabel(getActualEventStatus(event))}
                       </Badge>
                     </div>
                     
@@ -364,8 +469,28 @@ const MyEvents = () => {
               </Link>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {myRegistrations.map((registration) => (
+            <>
+              <div className="flex items-center gap-4 mb-6">
+                <Filter className="h-5 w-5 text-muted-foreground" />
+                <Select value={registrationStatusFilter} onValueChange={setRegistrationStatusFilter}>
+                  <SelectTrigger className="w-48">
+                    <SelectValue placeholder="筛选报名状态" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">全部活动</SelectItem>
+                    <SelectItem value="pending">待审核</SelectItem>
+                    <SelectItem value="payment_pending">待付款</SelectItem>
+                    <SelectItem value="paid">已报名</SelectItem>
+                    <SelectItem value="checked_in">已签到</SelectItem>
+                    <SelectItem value="ended">已结束</SelectItem>
+                  </SelectContent>
+                </Select>
+                <span className="text-sm text-muted-foreground">
+                  共{filteredRegistrations.length}个活动
+                </span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filteredRegistrations.map((registration) => (
                 <Card key={registration.id} className="group hover:shadow-lg transition-all duration-300">
                   {registration.events.cover_image_url ? (
                     <img
@@ -382,10 +507,10 @@ const MyEvents = () => {
                   <CardContent className="p-4">
                     <div className="flex items-start justify-between mb-2">
                       <Badge 
-                        variant={getStatusColor(registration.status) as any}
+                        variant={getStatusColor(getActualRegistrationStatus(registration)) as any}
                         className="text-xs"
                       >
-                        {getStatusLabel(registration.status)}
+                        {getStatusLabel(getActualRegistrationStatus(registration))}
                       </Badge>
                       {registration.payment_amount && registration.payment_amount > 0 && (
                         <Badge variant="outline" className="text-xs">
@@ -429,8 +554,9 @@ const MyEvents = () => {
                     </Button>
                   </CardContent>
                 </Card>
-              ))}
-            </div>
+                ))}
+              </div>
+            </>
           )}
         </TabsContent>
       </Tabs>

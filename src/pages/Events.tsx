@@ -30,7 +30,7 @@ interface Event {
 }
 
 const Events = () => {
-  const { user } = useAuth();
+  const { user, isOrganizer } = useAuth();
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -132,7 +132,7 @@ const Events = () => {
           <h1 className="text-3xl font-bold gradient-text">发现活动</h1>
           <p className="text-muted-foreground mt-2">找到您感兴趣的活动并立即报名</p>
         </div>
-        {user && (
+        {isOrganizer && (
           <Link to="/events/create">
             <Button className="bg-gradient-primary hover:opacity-90">
               创建活动
@@ -152,18 +152,6 @@ const Events = () => {
             className="pl-10"
           />
         </div>
-        <select
-          value={selectedType}
-          onChange={(e) => setSelectedType(e.target.value)}
-          className="px-3 py-2 rounded-md border border-input bg-background text-sm"
-        >
-          <option value="">所有类型</option>
-          {eventTypes.map(type => (
-            <option key={type} value={type}>
-              {getEventTypeLabel(type)}
-            </option>
-          ))}
-        </select>
       </div>
 
       {/* 即将开始的活动 */}

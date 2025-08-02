@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -9,12 +9,14 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
+import { Mail, Phone, Settings } from 'lucide-react';
 
 const CreateEvent = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
+  const [userProfile, setUserProfile] = useState<any>(null);
   
   const [formData, setFormData] = useState({
     title: '',
@@ -24,9 +26,7 @@ const CreateEvent = () => {
     end_time: '',
     location_type: 'offline', // 'online' or 'offline'
     online_link: '',
-    province: '',
     city: '',
-    district: '',
     detailed_address: '',
     cover_image: null as File | null,
     max_participants: '',
@@ -35,16 +35,33 @@ const CreateEvent = () => {
     is_paid: false,
     price: '',
     price_description: '',
-    contact_info: ''
+
   });
 
-  const provinces = [
-    '北京市', '天津市', '上海市', '重庆市', '河北省', '山西省', '辽宁省', '吉林省',
-    '黑龙江省', '江苏省', '浙江省', '安徽省', '福建省', '江西省', '山东省', '河南省',
-    '湖北省', '湖南省', '广东省', '海南省', '四川省', '贵州省', '云南省', '陕西省',
-    '甘肃省', '青海省', '台湾省', '内蒙古自治区', '广西壮族自治区', '西藏自治区',
-    '宁夏回族自治区', '新疆维吾尔自治区', '香港特别行政区', '澳门特别行政区'
-  ];
+  useEffect(() => {
+    if (user) {
+      fetchUserProfile();
+    }
+  }, [user]);
+
+  const fetchUserProfile = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('organizer_name, organizer_description, contact_email, contact_phone, roles')
+        .eq('user_id', user?.id)
+        .single();
+
+      if (error && error.code !== 'PGRST116') {
+        throw error;
+      }
+      setUserProfile(data);
+    } catch (error) {
+      console.error('Error fetching user profile:', error);
+    }
+  };
+
+  const supportedCities = ['北京', '上海', '广州', '深圳', '杭州'];
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -116,6 +133,25 @@ const CreateEvent = () => {
       return;
     }
 
+    // Check if user is organizer and has complete contact info
+    if (!userProfile || !userProfile.roles?.includes('organizer')) {
+      toast({
+        title: "错误",
+        description: "只有主办方才能创建活动",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (!userProfile.organizer_name || !userProfile.organizer_description || !userProfile.contact_email || !userProfile.contact_phone) {
+      toast({
+        title: "错误",
+        description: "请先完善主办方信息（组织名称、组织介绍、联系邮箱、联系电话）",
+        variant: "destructive"
+      });
+      return;
+    }
+
     if (formData.location_type === 'online' && !formData.online_link.trim()) {
       toast({
         title: "错误",
@@ -125,10 +161,10 @@ const CreateEvent = () => {
       return;
     }
 
-    if (formData.location_type === 'offline' && (!formData.province || !formData.city || !formData.detailed_address.trim())) {
+    if (formData.location_type === 'offline' && (!formData.city || !formData.detailed_address.trim())) {
       toast({
         title: "错误",
-        description: "请完整填写线下活动地址信息",
+        description: "请选择城市并填写详细地址",
         variant: "destructive"
       });
       return;
@@ -178,7 +214,7 @@ const CreateEvent = () => {
         location = '线上活动';
         detailed_address = formData.online_link.trim();
       } else {
-        location = `${formData.province}${formData.city}${formData.district || ''}`;
+        location = formData.city;
         detailed_address = formData.detailed_address.trim();
       }
 
@@ -197,7 +233,7 @@ const CreateEvent = () => {
         is_paid: false, // Always false since payment is under development
         price: null,
         price_description: null,
-        contact_info: formData.contact_info.trim() || null,
+
         tags: null, // Removed tags functionality
         organizer_id: user.id,
         status: (saveAsDraft ? 'draft' : 'published') as 'draft' | 'published'
@@ -403,7 +439,7 @@ const CreateEvent = () => {
             </div>
 
             <div>
-              <Label htmlFor="location_type">活动地点 *</Label>
+              <Label htmlFor="location_type">活动方式 *</Label>
               <select
                 id="location_type"
                 name="location_type"
@@ -412,7 +448,7 @@ const CreateEvent = () => {
                 className="w-full px-3 py-2 rounded-md border border-input bg-background"
                 required
               >
-                <option value="offline">线下场地举办</option>
+                <option value="offline">线下活动</option>
                 <option value="online">线上活动</option>
               </select>
             </div>
@@ -433,46 +469,26 @@ const CreateEvent = () => {
 
             {formData.location_type === 'offline' && (
               <>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <Label htmlFor="province">省份 *</Label>
-                    <select
-                      id="province"
-                      name="province"
-                      value={formData.province}
-                      onChange={handleInputChange}
-                      className="w-full px-3 py-2 rounded-md border border-input bg-background"
-                      required
-                    >
-                      <option value="">请选择省份</option>
-                      {provinces.map(province => (
-                        <option key={province} value={province}>
-                          {province}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <Label htmlFor="city">城市 *</Label>
-                    <Input
-                      id="city"
-                      name="city"
-                      value={formData.city}
-                      onChange={handleInputChange}
-                      placeholder="请输入城市"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="district">区县</Label>
-                    <Input
-                      id="district"
-                      name="district"
-                      value={formData.district}
-                      onChange={handleInputChange}
-                      placeholder="请输入区县"
-                    />
-                  </div>
+                <div>
+                  <Label htmlFor="city">城市 *</Label>
+                  <select
+                    id="city"
+                    name="city"
+                    value={formData.city}
+                    onChange={handleInputChange}
+                    className="w-full px-3 py-2 rounded-md border border-input bg-background"
+                    required
+                  >
+                    <option value="">请选择城市</option>
+                    {supportedCities.map(city => (
+                      <option key={city} value={city}>
+                        {city}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    暂不支持「北上广深杭」以外其他城市
+                  </p>
                 </div>
                 <div>
                   <Label htmlFor="detailed_address">详细地址 *</Label>
@@ -565,20 +581,54 @@ const CreateEvent = () => {
         {/* Contact Information */}
         <Card>
           <CardHeader>
-            <CardTitle>联系信息</CardTitle>
+            <CardTitle className="flex items-center justify-between">
+              主办方联系信息
+            </CardTitle>
           </CardHeader>
           <CardContent>
-            <div>
-              <Label htmlFor="contact_info">联系方式</Label>
-              <Textarea
-                id="contact_info"
-                name="contact_info"
-                value={formData.contact_info}
-                onChange={handleInputChange}
-                placeholder="提供参与者可以联系您的方式，如微信、电话、邮箱等"
-                rows={3}
-              />
-            </div>
+            {userProfile && userProfile.roles?.includes('organizer') ? (
+              <div className="space-y-3">
+                <div>
+                  <p className="font-medium">{userProfile.organizer_name || '未设置组织名称'}</p>
+                  {userProfile.organizer_description && (
+                    <p className="text-sm text-muted-foreground mt-1">{userProfile.organizer_description}</p>
+                  )}
+                </div>
+                
+                {userProfile.contact_email && (
+                  <div className="flex items-center gap-2">
+                    <Mail className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm">{userProfile.contact_email}</span>
+                  </div>
+                )}
+                
+                {userProfile.contact_phone && (
+                  <div className="flex items-center gap-2">
+                    <Phone className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm">{userProfile.contact_phone}</span>
+                  </div>
+                )}
+
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => navigate('/profile?tab=organizer')}
+                className="flex items-center gap-2"
+              >
+                <Settings className="h-4 w-4" />
+                修改联系方式
+              </Button>
+                
+              </div>
+            ) : (
+              <div className="text-center py-6">
+                <p className="text-muted-foreground mb-4">您还不是主办方，无法创建活动。</p>
+                <Button onClick={() => navigate('/become-organizer')} className="bg-gradient-primary hover:opacity-90">
+                  申请成为主办方
+                </Button>
+              </div>
+            )}
           </CardContent>
         </Card>
 

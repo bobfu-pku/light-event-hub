@@ -132,13 +132,13 @@ const Events = () => {
           <h1 className="text-3xl font-bold gradient-text">发现活动</h1>
           <p className="text-muted-foreground mt-2">找到您感兴趣的活动并立即报名</p>
         </div>
-        {isOrganizer && (
+        {/* {isOrganizer && (
           <Link to="/events/create">
             <Button className="bg-gradient-primary hover:opacity-90">
               创建活动
             </Button>
           </Link>
-        )}
+        )} */}
       </div>
 
       {/* Search and Filter */}

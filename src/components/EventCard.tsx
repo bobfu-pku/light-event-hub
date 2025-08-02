@@ -38,20 +38,6 @@ const EventCard: React.FC<EventCardProps> = ({ event }) => {
     });
   };
 
-  const getEventTypeLabel = (type: string) => {
-    const typeMap: Record<string, string> = {
-      conference: '会议',
-      training: '培训',
-      social: '社交',
-      sports: '运动',
-      performance: '演出',
-      workshop: '工作坊',
-      meetup: '聚会',
-      other: '其他'
-    };
-    return typeMap[type] || type;
-  };
-
   return (
     <Link to={`/events/${event.id}`}>
       <Card className="group hover:shadow-lg transition-all duration-300 hover:scale-[1.02]">
@@ -67,20 +53,22 @@ const EventCard: React.FC<EventCardProps> = ({ event }) => {
           </div>
         )}
         <CardContent className="p-4">
-          <div className="flex items-start justify-between mb-2">
-            <Badge variant="secondary" className="text-xs">
-              {getEventTypeLabel(event.event_type)}
-            </Badge>
-            {event.is_paid && (
-              <Badge variant="outline" className="text-xs">
-                ¥{event.price}
-              </Badge>
-            )}
+          <div className="flex items-start justify-between gap-3 mb-2">
+            <h3 className="font-semibold text-lg line-clamp-2 group-hover:text-primary transition-colors flex-1 min-w-0">
+              {event.title}
+            </h3>
+            <div className="flex-shrink-0">
+              {event.is_paid ? (
+                <Badge variant="outline" className="text-xs">
+                  ¥{event.price}
+                </Badge>
+              ) : (
+                <Badge variant="secondary" className="text-xs bg-green-100 text-green-800 border-green-200">
+                  免费
+                </Badge>
+              )}
+            </div>
           </div>
-          
-          <h3 className="font-semibold text-lg mb-2 line-clamp-2 group-hover:text-primary transition-colors">
-            {event.title}
-          </h3>
           
           <p className="text-muted-foreground text-sm mb-3 line-clamp-2">
             {event.description}

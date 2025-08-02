@@ -14,8 +14,10 @@ import ManageEvent from "./pages/ManageEvent";
 import MyEvents from "./pages/MyEvents";
 import Profile from "./pages/Profile";
 import BecomeOrganizer from "./pages/BecomeOrganizer";
+import AdminDashboard from "./pages/AdminDashboard";
 import TermsOfService from "./pages/TermsOfService";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
+import NotificationCenter from "./pages/NotificationCenter";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -96,10 +98,26 @@ const App = () => (
               } 
             />
             <Route 
+              path="/notifications" 
+              element={
+                <Layout>
+                  <NotificationCenter />
+                </Layout>
+              } 
+            />
+            <Route 
               path="/become-organizer" 
               element={
                 <Layout>
                   <BecomeOrganizer />
+                </Layout>
+              } 
+            />
+            <Route 
+              path="/admin" 
+              element={
+                <Layout>
+                  <AdminDashboard />
                 </Layout>
               } 
             />

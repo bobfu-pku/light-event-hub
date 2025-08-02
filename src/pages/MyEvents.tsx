@@ -324,7 +324,7 @@ const MyEvents = () => {
           <h1 className="text-3xl font-bold gradient-text">我的活动</h1>
           <p className="text-muted-foreground mt-2">管理您主办和参与的活动</p>
         </div>
-        {isOrganizer ? (
+        {/* {isOrganizer ? (
           <Link to="/events/create">
             <Button className="bg-gradient-primary hover:opacity-90">
               创建新活动
@@ -336,7 +336,7 @@ const MyEvents = () => {
               成为主办方
             </Button>
           </Link>
-        )}
+        )} */}
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
@@ -401,13 +401,22 @@ const MyEvents = () => {
                   )}
                   
                   <CardContent className="p-4">
-                    <div className="flex items-start justify-end mb-2">
+                    <div className="flex items-start justify-between mb-2">
                       <Badge 
                         variant={getStatusColor(getActualEventStatus(event)) as any}
                         className="text-xs"
                       >
                         {getStatusLabel(getActualEventStatus(event))}
                       </Badge>
+                      {event.is_paid ? (
+                        <Badge variant="outline" className="text-xs">
+                          ¥{event.price}
+                        </Badge>
+                      ) : (
+                        <Badge variant="secondary" className="text-xs bg-green-100 text-green-800 border-green-200">
+                          免费
+                        </Badge>
+                      )}
                     </div>
                     
                     <h3 className="font-semibold text-lg mb-2 line-clamp-2">
@@ -512,9 +521,13 @@ const MyEvents = () => {
                       >
                         {getStatusLabel(getActualRegistrationStatus(registration))}
                       </Badge>
-                      {registration.payment_amount && registration.payment_amount > 0 && (
+                      {registration.payment_amount && registration.payment_amount > 0 ? (
                         <Badge variant="outline" className="text-xs">
                           ¥{registration.payment_amount}
+                        </Badge>
+                      ) : (
+                        <Badge variant="secondary" className="text-xs bg-green-100 text-green-800 border-green-200">
+                          免费
                         </Badge>
                       )}
                     </div>

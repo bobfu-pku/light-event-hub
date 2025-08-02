@@ -14,6 +14,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { createDiscussionReplyNotification } from '@/lib/notifications';
 
 interface Discussion {
   id: string;
@@ -127,7 +128,6 @@ const EventDiscussion: React.FC<EventDiscussionProps> = ({ eventId, organizerId 
         .insert({
           event_id: eventId,
           author_id: user.id,
-          title: newTitle.trim() || null,
           content: newContent.trim()
         });
 
@@ -139,7 +139,6 @@ const EventDiscussion: React.FC<EventDiscussionProps> = ({ eventId, organizerId 
       });
 
       setNewContent('');
-      setNewTitle('');
       fetchDiscussions();
     } catch (error: any) {
       console.error('Error posting discussion:', error);
@@ -167,6 +166,37 @@ const EventDiscussion: React.FC<EventDiscussionProps> = ({ eventId, organizerId 
         });
 
       if (error) throw error;
+
+      // 查找原始讨论的作者，发送通知
+      const originalDiscussion = discussions.find(d => d.id === parentId);
+      if (originalDiscussion && originalDiscussion.author_id !== user.id) {
+        try {
+          // 获取活动信息
+          const { data: event } = await supabase
+            .from('events')
+            .select('title')
+            .eq('id', eventId)
+            .single();
+
+          // 获取当前用户的昵称
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('nickname')
+            .eq('user_id', user.id)
+            .single();
+
+          if (event) {
+            await createDiscussionReplyNotification(
+              originalDiscussion.author_id,
+              event.title,
+              profile?.nickname || 'Someone',
+              eventId
+            );
+          }
+        } catch (notificationError) {
+          console.error('创建通知失败:', notificationError);
+        }
+      }
 
       toast({
         title: "回复成功",
@@ -243,11 +273,6 @@ const EventDiscussion: React.FC<EventDiscussionProps> = ({ eventId, organizerId 
             <CardTitle className="text-lg">发起讨论</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Input
-              placeholder="讨论标题（可选）"
-              value={newTitle}
-              onChange={(e) => setNewTitle(e.target.value)}
-            />
             <Textarea
               placeholder="分享您的想法..."
               value={newContent}

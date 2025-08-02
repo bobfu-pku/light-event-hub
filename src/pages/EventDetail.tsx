@@ -9,6 +9,8 @@ import { Calendar, MapPin, Users, Clock, Phone, Mail, Star, MessageSquare, Credi
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import EventDiscussion from '@/components/EventDiscussion';
+import EventReviews from '@/components/EventReviews';
+import { createEventRegistrationNotification } from '@/lib/notifications';
 
 interface Event {
   id: string;
@@ -25,7 +27,6 @@ interface Event {
   is_paid: boolean;
   requires_approval: boolean;
   registration_deadline?: string;
-  contact_info?: string;
   organizer_id: string;
   profiles: {
     organizer_name?: string;
@@ -51,6 +52,7 @@ const EventDetail = () => {
   const [registration, setRegistration] = useState<Registration | null>(null);
   const [loading, setLoading] = useState(true);
   const [registering, setRegistering] = useState(false);
+  const [activeTab, setActiveTab] = useState('details');
 
   useEffect(() => {
     if (id) {
@@ -143,6 +145,18 @@ const EventDetail = () => {
         });
 
       if (error) throw error;
+
+      // 创建报名通知发送给主办方
+      try {
+        await createEventRegistrationNotification(
+          event.organizer_id,
+          event.title,
+          profile?.nickname || 'Unknown',
+          event.id
+        );
+      } catch (notificationError) {
+        console.error('创建通知失败:', notificationError);
+      }
 
       toast({
         title: "报名成功",
@@ -311,11 +325,11 @@ const EventDetail = () => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Main Content */}
         <div className="lg:col-span-2">
-          <Tabs defaultValue="details" className="w-full">
+          <Tabs defaultValue="details" className="w-full" onValueChange={setActiveTab}>
             <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="details">活动详情</TabsTrigger>
               <TabsTrigger value="discussion">讨论区</TabsTrigger>
-              <TabsTrigger value="reviews">活动回顾</TabsTrigger>
+              <TabsTrigger value="reviews">活动评价</TabsTrigger>
             </TabsList>
             
             <TabsContent value="details" className="mt-6">
@@ -336,23 +350,14 @@ const EventDetail = () => {
             </TabsContent>
             
             <TabsContent value="reviews" className="mt-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Star className="h-5 w-5" />
-                    活动回顾
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-muted-foreground">暂无活动回顾</p>
-                </CardContent>
-              </Card>
+              <EventReviews eventId={event.id} eventEndTime={event.end_time} />
             </TabsContent>
           </Tabs>
         </div>
 
-        {/* Sidebar */}
-        <div className="space-y-6">
+        {/* Sidebar - 仅在详情页显示 */}
+        {activeTab === 'details' && (
+          <div className="space-y-6">
           {/* Registration Card */}
           <Card>
             <CardHeader>
@@ -517,15 +522,11 @@ const EventDetail = () => {
                   <span className="text-sm">{event.profiles.contact_phone}</span>
                 </div>
               )}
-              
-              {event.contact_info && (
-                <div className="pt-2 border-t">
-                  <p className="text-sm text-muted-foreground">{event.contact_info}</p>
-                </div>
-              )}
+
             </CardContent>
           </Card>
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );

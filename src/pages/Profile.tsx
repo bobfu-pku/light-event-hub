@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,6 +14,7 @@ import { User, Settings, Bell, Shield, Upload, Eye, EyeOff } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 interface Profile {
   id: string;
   user_id: string;
@@ -28,12 +29,15 @@ interface Profile {
 }
 const Profile = () => {
   const {
-    user
+    user,
+    refreshProfile
   } = useAuth();
   const {
     toast
   } = useToast();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const [activeTab, setActiveTab] = useState('profile');
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -43,6 +47,7 @@ const Profile = () => {
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [showPasswordDialog, setShowPasswordDialog] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [formData, setFormData] = useState({
     nickname: '',
@@ -63,6 +68,13 @@ const Profile = () => {
       fetchProfile();
     }
   }, [user]);
+
+  useEffect(() => {
+    const tab = searchParams.get('tab');
+    if (tab && ['profile', 'organizer', 'settings'].includes(tab)) {
+      setActiveTab(tab);
+    }
+  }, [searchParams]);
   const fetchProfile = async () => {
     if (!user) return;
     try {
@@ -165,9 +177,40 @@ const Profile = () => {
         ...prev,
         avatar_url: publicUrl
       }));
+      
+      // 立即保存头像到数据库
+      const profileData = {
+        user_id: user.id,
+        nickname: formData.nickname.trim() || null,
+        bio: formData.bio.trim() || null,
+        avatar_url: publicUrl,
+        contact_email: formData.contact_email.trim() || null,
+        contact_phone: formData.contact_phone.trim() || null,
+        organizer_name: formData.organizer_name.trim() || null,
+        organizer_description: formData.organizer_description.trim() || null
+      };
+      
+      const { error: saveError } = await supabase.from('profiles').upsert([profileData], {
+        onConflict: 'user_id'
+      });
+      
+      if (saveError) {
+        console.error('Error saving avatar:', saveError);
+        toast({
+          title: "错误",
+          description: "头像保存失败，请稍后重试",
+          variant: "destructive"
+        });
+        return;
+      }
+      
+      // 刷新本地和全局profile数据
+      await fetchProfile();
+      await refreshProfile();
+      
       toast({
         title: "成功",
-        description: "头像上传成功"
+        description: "头像上传并保存成功"
       });
     } catch (error: any) {
       console.error('Error uploading avatar:', error);
@@ -182,6 +225,19 @@ const Profile = () => {
   };
   const handleSaveProfile = async () => {
     if (!user) return;
+    
+    // 如果是主办方，验证必填字段
+    if (isOrganizer) {
+      if (!formData.organizer_name.trim() || !formData.contact_email.trim()) {
+        toast({
+          title: "错误",
+          description: "请填写所有主办方必填信息",
+          variant: "destructive"
+        });
+        return;
+      }
+    }
+    
     setSaving(true);
     try {
       const profileData = {
@@ -189,8 +245,8 @@ const Profile = () => {
         nickname: formData.nickname.trim() || null,
         bio: formData.bio.trim() || null,
         avatar_url: formData.avatar_url.trim() || null,
-        contact_email: formData.contact_email.trim() || null,
-        contact_phone: formData.contact_phone.trim() || null,
+        contact_email: isOrganizer ? formData.contact_email.trim() : null,
+        contact_phone: isOrganizer ? formData.contact_phone.trim() : null,
         organizer_name: formData.organizer_name.trim() || null,
         organizer_description: formData.organizer_description.trim() || null
       };
@@ -204,7 +260,8 @@ const Profile = () => {
         title: "成功",
         description: "用户资料已更新"
       });
-      fetchProfile();
+      await fetchProfile();
+      await refreshProfile();
     } catch (error: any) {
       console.error('Error saving profile:', error);
       toast({
@@ -277,12 +334,13 @@ const Profile = () => {
         description: "密码修改成功"
       });
 
-      // Clear password form
+      // Clear password form and close dialog
       setPasswordData({
         currentPassword: '',
         newPassword: '',
         confirmPassword: ''
       });
+      setShowPasswordDialog(false);
     } catch (error: any) {
       console.error('Error changing password:', error);
       toast({
@@ -322,9 +380,31 @@ const Profile = () => {
         description: "您的账户已被永久删除，感谢您的使用"
       });
 
-      // Clear local storage and redirect
+      // 清理所有认证状态，包括localStorage、sessionStorage等
+      Object.keys(localStorage).forEach((key) => {
+        if (key.startsWith('supabase.auth.') || key.includes('sb-')) {
+          localStorage.removeItem(key);
+        }
+      });
+      
+      Object.keys(sessionStorage || {}).forEach((key) => {
+        if (key.startsWith('supabase.auth.') || key.includes('sb-')) {
+          sessionStorage.removeItem(key);
+        }
+      });
+
+      // 清除所有其他缓存数据
       localStorage.clear();
-      navigate('/auth');
+      
+      // 强制登出并跳转到首页
+      try {
+        await supabase.auth.signOut({ scope: 'global' });
+      } catch (err) {
+        // 忽略错误
+      }
+      
+      // 强制跳转到首页并刷新页面，确保恢复未登录状态
+      window.location.href = '/';
     } catch (error: any) {
       console.error('Error deleting account:', error);
       toast({
@@ -359,7 +439,7 @@ const Profile = () => {
         <p className="text-muted-foreground mt-2">管理您的个人资料和账户设置</p>
       </div>
 
-      <Tabs defaultValue="profile" className="w-full">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="profile" className="flex items-center gap-2">
             <User className="h-4 w-4" />
@@ -383,25 +463,6 @@ const Profile = () => {
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="email">邮箱地址</Label>
-                  <Input id="email" value={user.email || ''} disabled className="bg-muted" />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    邮箱地址无法修改
-                  </p>
-                </div>
-
-                <div>
-                  <Label htmlFor="nickname">昵称</Label>
-                  <Input id="nickname" name="nickname" value={formData.nickname} onChange={handleInputChange} placeholder="输入您的昵称" />
-                </div>
-              </div>
-
-              <div>
-                <Label htmlFor="bio">个人简介</Label>
-                <Textarea id="bio" name="bio" value={formData.bio} onChange={handleInputChange} placeholder="简单介绍一下自己" rows={3} />
-              </div>
-
-              <div>
                 <Label>头像</Label>
                 <div className="flex items-center gap-4">
                   <Avatar className="w-20 h-20">
@@ -423,17 +484,24 @@ const Profile = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="contact_email">联系邮箱</Label>
-                  <Input id="contact_email" name="contact_email" value={formData.contact_email} onChange={handleInputChange} placeholder="用于活动联系的邮箱" type="email" />
-                </div>
-
-                <div>
-                  <Label htmlFor="contact_phone">联系电话</Label>
-                  <Input id="contact_phone" name="contact_phone" value={formData.contact_phone} onChange={handleInputChange} placeholder="用于活动联系的电话" />
+                  <Label htmlFor="nickname">昵称</Label>
+                  <Input id="nickname" name="nickname" value={formData.nickname} onChange={handleInputChange} placeholder="输入您的昵称" />
                 </div>
               </div>
+
+              <div>
+                <Label htmlFor="bio">个人简介</Label>
+                <Textarea id="bio" name="bio" value={formData.bio} onChange={handleInputChange} placeholder="简单介绍一下自己" rows={3} />
+              </div>
+
+              <div>
+                  <Label htmlFor="email">邮箱地址</Label>
+                  <Input id="email" value={user.email || ''} disabled className="bg-muted" />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    邮箱地址无法修改
+                  </p>
+                </div>
 
               <div className="pt-4">
                 <Button onClick={handleSaveProfile} disabled={saving} className="bg-gradient-primary hover:opacity-90">
@@ -455,30 +523,47 @@ const Profile = () => {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {!isOrganizer && <div className="p-4 bg-muted rounded-lg">
-                  <h3 className="font-medium mb-2">申请成为主办方</h3>
+              {!isOrganizer ? (
+                <div className="p-4 bg-muted rounded-lg">
+                  <h3 className="font-medium mb-2">暂无主办方信息</h3>
                   <p className="text-sm text-muted-foreground mb-4">
-                    成为主办方后，您可以创建和管理活动，审核报名，管理现场核验等。
+                    您还不是主办方；成为主办方后，您可以创建和管理活动。
                   </p>
-                </div>}
-
-              <div>
-                <Label htmlFor="organizer_name">组织/机构名称 *</Label>
-                <Input id="organizer_name" name="organizer_name" value={formData.organizer_name} onChange={handleInputChange} placeholder="输入您的组织或机构名称" />
-              </div>
-
-              <div>
-                <Label htmlFor="organizer_description">组织介绍</Label>
-                <Textarea id="organizer_description" name="organizer_description" value={formData.organizer_description} onChange={handleInputChange} placeholder="介绍您的组织背景、主要业务等" rows={4} />
-              </div>
-
-              <div className="pt-4">
-                {isOrganizer ? <Button onClick={handleSaveProfile} disabled={saving} className="bg-gradient-primary hover:opacity-90">
-                    {saving ? "保存中..." : "更新主办方信息"}
-                  </Button> : <Button onClick={() => navigate('/become-organizer')} className="bg-gradient-primary hover:opacity-90">
+                  <Button onClick={() => navigate('/become-organizer')} className="bg-gradient-primary hover:opacity-90">
                     申请成为主办方
-                  </Button>}
-              </div>
+                  </Button>
+                </div>
+              ) : (
+                <>
+                  <div>
+                    <Label htmlFor="organizer_name">组织/机构名称 *</Label>
+                    <Input id="organizer_name" name="organizer_name" value={formData.organizer_name} onChange={handleInputChange} placeholder="输入您的组织或机构名称" required />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="organizer_description">组织介绍</Label>
+                    <Textarea id="organizer_description" name="organizer_description" value={formData.organizer_description} onChange={handleInputChange} placeholder="介绍您的组织背景、主要业务等" rows={4} />
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="contact_email">联系邮箱 *</Label>
+                      <Input id="contact_email" name="contact_email" value={formData.contact_email} onChange={handleInputChange} placeholder="用于活动联系的邮箱" type="email" required />
+                    </div>
+
+                    <div>
+                      <Label htmlFor="contact_phone">联系电话</Label>
+                      <Input id="contact_phone" name="contact_phone" value={formData.contact_phone} onChange={handleInputChange} placeholder="用于活动联系的电话" />
+                    </div>
+                  </div>
+
+                  <div className="pt-4">
+                    <Button onClick={handleSaveProfile} disabled={saving} className="bg-gradient-primary hover:opacity-90">
+                      {saving ? "保存中..." : "更新主办方信息"}
+                    </Button>
+                  </div>
+                </>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -490,45 +575,78 @@ const Profile = () => {
                 <CardTitle>通知设置</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h4 className="font-medium">活动报名通知</h4>
-                      <p className="text-sm text-muted-foreground">
-                        接收报名审核结果和活动变更通知
-                      </p>
+                <div className="space-y-6">
+                  {/* 管理员通知设置 */}
+                  {profile?.roles?.includes('admin') && (
+                    <div className="space-y-4">
+                      <div className="border-b pb-2">
+                        <h4 className="font-medium text-primary">管理员通知</h4>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h4 className="font-medium">主办方申请提醒</h4>
+                          <p className="text-sm text-muted-foreground">
+                            提醒有人申请成为主办方
+                          </p>
+                        </div>
+                        <Switch defaultChecked />
+                      </div>
                     </div>
-                    <Switch defaultChecked />
-                  </div>
+                  )}
 
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h4 className="font-medium">活动提醒</h4>
-                      <p className="text-sm text-muted-foreground">
-                        在活动开始前收到提醒
-                      </p>
+                  {/* 主办方通知设置 */}
+                  {isOrganizer && (
+                    <div className="space-y-4">
+                      <div className="border-b pb-2">
+                        <h4 className="font-medium text-primary">主办方通知</h4>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h4 className="font-medium">活动管理提醒</h4>
+                          <p className="text-sm text-muted-foreground">
+                            提醒有人报名、提醒审核报名
+                          </p>
+                        </div>
+                        <Switch defaultChecked />
+                      </div>
                     </div>
-                    <Switch defaultChecked />
-                  </div>
+                  )}
 
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h4 className="font-medium">讨论区互动</h4>
-                      <p className="text-sm text-muted-foreground">
-                        接收@我和回复通知
-                      </p>
+                  {/* 普通用户通知设置 */}
+                  <div className="space-y-4">
+                    <div className="border-b pb-2">
+                      <h4 className="font-medium text-primary">用户通知</h4>
                     </div>
-                    <Switch defaultChecked />
-                  </div>
+                    
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="font-medium">报名通知</h4>
+                        <p className="text-sm text-muted-foreground">
+                          接收报名审核结果和活动变更通知
+                        </p>
+                      </div>
+                      <Switch defaultChecked />
+                    </div>
 
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h4 className="font-medium">活动推荐</h4>
-                      <p className="text-sm text-muted-foreground">
-                        根据兴趣推荐相关活动
-                      </p>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="font-medium">活动提醒</h4>
+                        <p className="text-sm text-muted-foreground">
+                          在活动开始前1天收到提醒
+                        </p>
+                      </div>
+                      <Switch defaultChecked />
                     </div>
-                    <Switch />
+
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="font-medium">讨论区互动</h4>
+                        <p className="text-sm text-muted-foreground">
+                          接收回复通知
+                        </p>
+                      </div>
+                      <Switch defaultChecked />
+                    </div>
                   </div>
                 </div>
               </CardContent>
@@ -540,9 +658,10 @@ const Profile = () => {
               </CardHeader>
               <CardContent className="space-y-6">
                 <div>
-                  <h4 className="font-medium mb-2">账户信息</h4>
+                  <h4 className="font-medium mb-4">账户信息</h4>
                   <div className="space-y-2 text-sm">
                     <p><span className="text-muted-foreground">用户ID:</span> {user.id}</p>
+                    <p><span className="text-muted-foreground">注册邮箱:</span> {user.email}</p>
                     <p><span className="text-muted-foreground">注册时间:</span> {new Date(user.created_at || '').toLocaleDateString('zh-CN')}</p>
                     <p><span className="text-muted-foreground">角色:</span> 
                       {profile?.roles?.map(role => (
@@ -554,87 +673,105 @@ const Profile = () => {
                   </div>
                 </div>
 
-                <div className="pt-4 border-t">
-                  <h4 className="font-medium mb-4">修改密码</h4>
-                  <div className="space-y-4">
-                    <div>
-                      <Label htmlFor="currentPassword">当前密码</Label>
-                      <div className="relative">
-                        <Input
-                          id="currentPassword"
-                          name="currentPassword"
-                          type={showCurrentPassword ? "text" : "password"}
-                          value={passwordData.currentPassword}
-                          onChange={handlePasswordInputChange}
-                          placeholder="输入当前密码"
-                        />
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="absolute right-0 top-0 h-full px-3"
-                          onClick={() => setShowCurrentPassword(!showCurrentPassword)}
-                        >
-                          {showCurrentPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                        </Button>
-                      </div>
-                    </div>
+                  <Dialog open={showPasswordDialog} onOpenChange={setShowPasswordDialog}>
+                    <DialogTrigger asChild>
+                      <Button className="bg-gradient-primary hover:opacity-90">
+                        修改密码
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="sm:max-w-md">
+                      <DialogHeader>
+                        <DialogTitle>修改密码</DialogTitle>
+                      </DialogHeader>
+                      <div className="space-y-4">
+                        <div>
+                          <Label htmlFor="currentPassword">当前密码</Label>
+                          <div className="relative">
+                            <Input
+                              id="currentPassword"
+                              name="currentPassword"
+                              type={showCurrentPassword ? "text" : "password"}
+                              value={passwordData.currentPassword}
+                              onChange={handlePasswordInputChange}
+                              placeholder="输入当前密码"
+                            />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="absolute right-0 top-0 h-full px-3"
+                              onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                            >
+                              {showCurrentPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                            </Button>
+                          </div>
+                        </div>
 
-                    <div>
-                      <Label htmlFor="newPassword">新密码</Label>
-                      <div className="relative">
-                        <Input
-                          id="newPassword"
-                          name="newPassword"
-                          type={showNewPassword ? "text" : "password"}
-                          value={passwordData.newPassword}
-                          onChange={handlePasswordInputChange}
-                          placeholder="输入新密码（至少6位）"
-                        />
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="absolute right-0 top-0 h-full px-3"
-                          onClick={() => setShowNewPassword(!showNewPassword)}
-                        >
-                          {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                        </Button>
-                      </div>
-                    </div>
+                        <div>
+                          <Label htmlFor="newPassword">新密码</Label>
+                          <div className="relative">
+                            <Input
+                              id="newPassword"
+                              name="newPassword"
+                              type={showNewPassword ? "text" : "password"}
+                              value={passwordData.newPassword}
+                              onChange={handlePasswordInputChange}
+                              placeholder="输入新密码（至少6位）"
+                            />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="absolute right-0 top-0 h-full px-3"
+                              onClick={() => setShowNewPassword(!showNewPassword)}
+                            >
+                              {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                            </Button>
+                          </div>
+                        </div>
 
-                    <div>
-                      <Label htmlFor="confirmPassword">确认新密码</Label>
-                      <div className="relative">
-                        <Input
-                          id="confirmPassword"
-                          name="confirmPassword"
-                          type={showConfirmPassword ? "text" : "password"}
-                          value={passwordData.confirmPassword}
-                          onChange={handlePasswordInputChange}
-                          placeholder="再次输入新密码"
-                        />
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="absolute right-0 top-0 h-full px-3"
-                          onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                        >
-                          {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                        </Button>
-                      </div>
-                    </div>
+                        <div>
+                          <Label htmlFor="confirmPassword">确认新密码</Label>
+                          <div className="relative">
+                            <Input
+                              id="confirmPassword"
+                              name="confirmPassword"
+                              type={showConfirmPassword ? "text" : "password"}
+                              value={passwordData.confirmPassword}
+                              onChange={handlePasswordInputChange}
+                              placeholder="再次输入新密码"
+                            />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="absolute right-0 top-0 h-full px-3"
+                              onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                            >
+                              {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                            </Button>
+                          </div>
+                        </div>
 
-                    <Button 
-                      onClick={handleChangePassword} 
-                      disabled={changingPassword}
-                      className="bg-gradient-primary hover:opacity-90"
-                    >
-                      {changingPassword ? "修改中..." : "修改密码"}
-                    </Button>
-                  </div>
-                </div>
+                        <div className="flex gap-2 pt-4">
+                          <Button 
+                            variant="outline" 
+                            onClick={() => setShowPasswordDialog(false)}
+                            className="flex-1"
+                          >
+                            取消
+                          </Button>
+                          <Button 
+                            onClick={handleChangePassword} 
+                            disabled={changingPassword}
+                            className="bg-gradient-primary hover:opacity-90 flex-1"
+                          >
+                            {changingPassword ? "修改中..." : "修改密码"}
+                          </Button>
+                        </div>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
 
                 <div className="pt-4 border-t">
                   <h4 className="font-medium mb-2 text-destructive">危险操作</h4>

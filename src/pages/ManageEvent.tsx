@@ -11,6 +11,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import QRCodeScanner from '@/components/QRCodeScanner';
+import { createRegistrationStatusNotification, createEventRegistrationNotification } from '@/lib/notifications';
 
 interface Event {
   id: string;
@@ -130,12 +131,39 @@ const ManageEvent = () => {
 
   const handleRejectRegistration = async (registrationId: string) => {
     try {
+      // 获取注册记录信息
+      const registration = registrations.find(r => r.id === registrationId);
+      if (!registration) {
+        throw new Error('注册记录不存在');
+      }
+
       const { error } = await supabase
         .from('event_registrations')
         .update({ status: 'rejected' })
         .eq('id', registrationId);
 
       if (error) throw error;
+
+      // 获取用户ID
+      const { data: userRegistration } = await supabase
+        .from('event_registrations')
+        .select('user_id')
+        .eq('id', registrationId)
+        .single();
+
+      // 创建拒绝通知
+      if (userRegistration && event) {
+        try {
+          await createRegistrationStatusNotification(
+            userRegistration.user_id,
+            event.title,
+            false,
+            event.id
+          );
+        } catch (notificationError) {
+          console.error('创建通知失败:', notificationError);
+        }
+      }
 
       toast({
         title: '成功',
@@ -290,6 +318,27 @@ const ManageEvent = () => {
         .eq('id', registrationId);
 
       if (error) throw error;
+
+      // 获取用户ID
+      const { data: userRegistration } = await supabase
+        .from('event_registrations')
+        .select('user_id')
+        .eq('id', registrationId)
+        .single();
+
+      // 创建通过通知
+      if (userRegistration && event) {
+        try {
+          await createRegistrationStatusNotification(
+            userRegistration.user_id,
+            event.title,
+            true,
+            event.id
+          );
+        } catch (notificationError) {
+          console.error('创建通知失败:', notificationError);
+        }
+      }
 
       toast({
         title: '成功',

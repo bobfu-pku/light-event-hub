@@ -10,6 +10,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { Building, User } from 'lucide-react';
 import { sanitizeInput, validateEmail, validateRequired } from '@/lib/validation';
+import { createOrganizerApplicationNotification, getAdminUserIds } from '@/lib/notifications';
 
 const BecomeOrganizer = () => {
   const { user, profile } = useAuth();
@@ -87,6 +88,22 @@ const BecomeOrganizer = () => {
         });
 
       if (error) throw error;
+
+      // 向所有管理员发送通知
+      try {
+        const adminIds = await getAdminUserIds();
+        console.log('找到管理员用户:', adminIds);
+        for (const adminId of adminIds) {
+          await createOrganizerApplicationNotification(
+            adminId,
+            profile?.nickname || user.email || 'Unknown',
+            organizerName
+          );
+        }
+        console.log('已向', adminIds.length, '位管理员发送通知');
+      } catch (notificationError) {
+        console.error('创建通知失败:', notificationError);
+      }
 
       toast({
         title: "申请已提交",

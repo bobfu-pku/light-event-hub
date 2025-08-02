@@ -4,14 +4,16 @@ import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useAuth } from '@/contexts/AuthContext';
-import { Calendar, Plus, User, Settings, LogOut, Bell, Search } from 'lucide-react';
+import { Calendar, Plus, User, Settings, LogOut, Bell, Search, Shield } from 'lucide-react';
 import logoImage from '@/assets/lightevent-logo.png';
 const Header = () => {
   const {
     user,
     profile,
     signOut,
-    isOrganizer
+    isOrganizer,
+    isAdmin,
+    unreadNotificationCount
   } = useAuth();
   const navigate = useNavigate();
   const handleSignOut = async () => {
@@ -41,11 +43,7 @@ const Header = () => {
                 <Bell className="h-4 w-4" />
               </Button>
 
-              {/* Create Event Button (for organizers) */}
-              {isOrganizer && <Button variant="premium" size="sm" onClick={() => navigate('/events/create')} className="hidden sm:flex">
-                  <Plus className="h-4 w-4 mr-1" />
-                  创建活动
-                </Button>}
+
 
               {/* User Menu */}
               <DropdownMenu>
@@ -57,6 +55,13 @@ const Header = () => {
                         {profile?.nickname?.charAt(0) || user.email?.charAt(0)?.toUpperCase()}
                       </AvatarFallback>
                     </Avatar>
+                    {unreadNotificationCount > 0 && (
+                      <div className="absolute -top-1 -right-1 h-4 w-4 bg-red-500 rounded-full flex items-center justify-center">
+                        <span className="text-xs text-white font-medium">
+                          {unreadNotificationCount > 9 ? '9+' : unreadNotificationCount}
+                        </span>
+                      </div>
+                    )}
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent className="w-40" align="end" forceMount>
@@ -68,24 +73,55 @@ const Header = () => {
                       <p className="text-xs leading-none text-muted-foreground">
                         {user.email}
                       </p>
-                      {isOrganizer && <p className="text-xs leading-none text-secondary">
+                      {isAdmin && <p className="text-xs leading-none text-red-600 font-medium">
+                          管理员
+                        </p>}
+                      {isOrganizer && !isAdmin && <p className="text-xs leading-none text-secondary">
                           主办方
                         </p>}
                     </div>
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => navigate('/profile')}>
-                    <User className="mr-2 h-4 w-4" />
-                    <span>账户设置</span>
-                  </DropdownMenuItem>
+                  {isAdmin && (
+                    <>
+                      <DropdownMenuItem onClick={() => navigate('/admin')}>
+                        <Shield className="mr-2 h-4 w-4" />
+                        <span>管理员后台</span>
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                    </>
+                  )}
+                  {isOrganizer ? (
+                    <DropdownMenuItem onClick={() => navigate('/events/create')}>
+                      <Plus className="mr-2 h-4 w-4" />
+                      <span>发布活动</span>
+                    </DropdownMenuItem>
+                  ) : (
+                    <DropdownMenuItem onClick={() => navigate('/become-organizer')}>
+                      <Plus className="mr-2 h-4 w-4" />
+                      <span>成为主办方</span>
+                    </DropdownMenuItem>
+                  )}
                   <DropdownMenuItem onClick={() => navigate('/my-events')}>
                     <Calendar className="mr-2 h-4 w-4" />
                     <span>我的活动</span>
                   </DropdownMenuItem>
-                  {!isOrganizer && <DropdownMenuItem onClick={() => navigate('/become-organizer')}>
-                      <Plus className="mr-2 h-4 w-4" />
-                      <span>成为主办方</span>
-                    </DropdownMenuItem>}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => navigate('/notifications')}>
+                    <div className="flex items-center justify-between w-full">
+                      <div className="flex items-center">
+                        <Bell className="mr-2 h-4 w-4" />
+                        <span>通知中心</span>
+                      </div>
+                      {unreadNotificationCount > 0 && (
+                        <div className="h-2 w-2 bg-red-500 rounded-full"></div>
+                      )}
+                    </div>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => navigate('/profile')}>
+                    <User className="mr-2 h-4 w-4" />
+                    <span>账户设置</span>
+                  </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={handleSignOut}>
                     <LogOut className="mr-2 h-4 w-4" />
@@ -97,7 +133,7 @@ const Header = () => {
               <Button variant="ghost" onClick={() => navigate('/auth')}>
                 登录
               </Button>
-              <Button variant="hero" onClick={() => navigate('/auth')}>
+              <Button variant="hero" onClick={() => navigate('/auth?tab=signup')}>
                 注册
               </Button>
             </div>}

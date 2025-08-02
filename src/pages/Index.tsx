@@ -267,7 +267,7 @@ const Index = () => {
             <Button 
               variant="outline" 
               size="lg" 
-              onClick={() => navigate('/auth')}
+              onClick={() => navigate('/auth?tab=signup')}
               className="text-lg px-8 py-4 bg-white text-primary border-white hover:bg-white/90"
             >
               免费注册

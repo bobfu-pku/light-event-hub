@@ -2,6 +2,9 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { Tables } from '@/integrations/supabase/types';
+
+type Notification = Tables<'notifications'>;
 
 interface Profile {
   id: string;
@@ -25,6 +28,10 @@ interface AuthContextType {
   signUp: (email: string, password: string, name?: string) => Promise<{ error: any }>;
   signOut: () => Promise<void>;
   isOrganizer: boolean;
+  isAdmin: boolean;
+  refreshProfile: () => Promise<void>;
+  unreadNotificationCount: number;
+  refreshNotifications: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -57,6 +64,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
   const { toast } = useToast();
 
   const fetchProfile = async (userId: string) => {
@@ -78,6 +86,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const fetchUnreadNotificationCount = async (userId: string) => {
+    try {
+      const { count, error } = await supabase
+        .from('notifications')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', userId)
+        .eq('is_read', false);
+
+      if (error) {
+        console.error('Error fetching notification count:', error);
+        return;
+      }
+
+      setUnreadNotificationCount(count || 0);
+    } catch (error) {
+      console.error('Error in fetchUnreadNotificationCount:', error);
+    }
+  };
+
+  const refreshNotifications = async () => {
+    if (user) {
+      await fetchUnreadNotificationCount(user.id);
+    }
+  };
+
   useEffect(() => {
     // 设置认证状态监听器
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -86,12 +119,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUser(session?.user ?? null);
         
         if (session?.user) {
-          // 延迟获取profile数据避免死锁
+          // 延迟获取profile数据和通知数据避免死锁
           setTimeout(() => {
             fetchProfile(session.user.id);
+            fetchUnreadNotificationCount(session.user.id);
           }, 0);
         } else {
           setProfile(null);
+          setUnreadNotificationCount(0);
         }
         
         setLoading(false);
@@ -106,6 +141,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (session?.user) {
         setTimeout(() => {
           fetchProfile(session.user.id);
+          fetchUnreadNotificationCount(session.user.id);
         }, 0);
       }
       
@@ -114,6 +150,45 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     return () => subscription.unsubscribe();
   }, []);
+
+  // 设置通知实时订阅
+  useEffect(() => {
+    if (!user) return;
+
+    const notificationSubscription = supabase
+      .channel('notifications')
+      .on('postgres_changes', 
+        { 
+          event: 'INSERT', 
+          schema: 'public', 
+          table: 'notifications',
+          filter: `user_id=eq.${user.id}`
+        }, 
+        (payload) => {
+          console.log('收到新通知:', payload);
+          // 刷新通知计数
+          fetchUnreadNotificationCount(user.id);
+        }
+      )
+      .on('postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public', 
+          table: 'notifications',
+          filter: `user_id=eq.${user.id}`
+        },
+        (payload) => {
+          console.log('通知状态更新:', payload);
+          // 刷新通知计数
+          fetchUnreadNotificationCount(user.id);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      notificationSubscription.unsubscribe();
+    };
+  }, [user]);
 
   const signUp = async (email: string, password: string, name?: string) => {
     try {
@@ -247,6 +322,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const isOrganizer = profile?.roles?.includes('organizer') || false;
+  const isAdmin = profile?.roles?.includes('admin') || false;
+
+  const refreshProfile = async () => {
+    if (user) {
+      await fetchProfile(user.id);
+    }
+  };
 
   const value = {
     user,
@@ -257,6 +339,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     signUp,
     signOut,
     isOrganizer,
+    isAdmin,
+    refreshProfile,
+    unreadNotificationCount,
+    refreshNotifications,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

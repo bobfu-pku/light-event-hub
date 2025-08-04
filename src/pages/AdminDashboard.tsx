@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Textarea } from '@/components/ui/textarea';
 import { AlertCircle, Users, Calendar, CheckCircle, XCircle, Clock } from 'lucide-react';
 import { createOrganizerApprovalNotification, getAdminUserIds } from '@/lib/notifications';
+import { timeUtils } from '@/lib/utils';
 
 interface OrganizerApplication {
   id: string;
@@ -39,9 +40,10 @@ interface EventData {
 }
 
 const AdminDashboard = () => {
-  const { user, isAdmin, loading: authLoading } = useAuth();
+  const { user, isAdmin, loading: authLoading, profile } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const [searchParams] = useSearchParams();
   
   const [applications, setApplications] = useState<OrganizerApplication[]>([]);
   const [events, setEvents] = useState<EventData[]>([]);
@@ -50,6 +52,7 @@ const AdminDashboard = () => {
   const [selectedApplication, setSelectedApplication] = useState<OrganizerApplication | null>(null);
   const [adminNotes, setAdminNotes] = useState('');
   const [reviewing, setReviewing] = useState(false);
+  const [activeTab, setActiveTab] = useState('events');
 
   useEffect(() => {
     // 等待认证状态加载完成
@@ -59,6 +62,12 @@ const AdminDashboard = () => {
 
     if (!user) {
       navigate('/auth');
+      return;
+    }
+    
+    // 等待用户资料加载完成再检查管理员权限
+    // 如果用户已登录但资料为null，需要等待资料加载
+    if (user && !profile) {
       return;
     }
     
@@ -73,7 +82,15 @@ const AdminDashboard = () => {
     }
     
     fetchData();
-  }, [user, isAdmin, navigate, authLoading]);
+  }, [user, isAdmin, profile, navigate, authLoading]);
+
+  // 处理URL参数设置默认tab
+  useEffect(() => {
+    const tab = searchParams.get('tab');
+    if (tab && ['events', 'applications'].includes(tab)) {
+      setActiveTab(tab);
+    }
+  }, [searchParams]);
 
   const fetchData = async () => {
     try {
@@ -263,14 +280,14 @@ const AdminDashboard = () => {
     setReviewDialogOpen(true);
   };
 
-  // 如果认证状态还在加载或者数据还在加载，显示加载状态
-  if (authLoading || loading) {
+  // 如果认证状态还在加载、用户资料还未加载，或者数据还在加载，显示加载状态
+  if (authLoading || (user && !profile) || loading) {
     return (
       <div className="container mx-auto px-4 py-8">
         <div className="flex items-center justify-center min-h-64">
           <div className="text-center">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
-            <p>{authLoading ? '正在验证身份...' : '加载中...'}</p>
+            <p>{authLoading ? '正在验证身份...' : (user && !profile) ? '正在加载用户信息...' : '加载中...'}</p>
           </div>
         </div>
       </div>
@@ -331,10 +348,15 @@ const AdminDashboard = () => {
         </Card>
       </div>
 
-      <Tabs defaultValue="events" className="space-y-6">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
         <TabsList>
           <TabsTrigger value="events">活动管理</TabsTrigger>
-          <TabsTrigger value="applications">主办方申请</TabsTrigger>
+          <TabsTrigger value="applications" className="relative">
+            主办方申请
+            {pendingApplications.length > 0 && (
+              <span className="absolute -top-1 -right-1 h-2 w-2 bg-red-500 rounded-full"></span>
+            )}
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="events" className="space-y-6">
@@ -371,7 +393,7 @@ const AdminDashboard = () => {
                           </Badge>
                         </TableCell>
                         <TableCell>{event.registration_count}</TableCell>
-                        <TableCell>{new Date(event.start_time).toLocaleDateString()}</TableCell>
+                        <TableCell>{timeUtils.formatBeijingTimeShort(event.start_time)}</TableCell>
                         <TableCell>
                           <div className="flex gap-2">
                             <Button
@@ -430,7 +452,7 @@ const AdminDashboard = () => {
                         {/* 开始时间 */}
                         <div className="text-sm">
                           <span className="text-muted-foreground">开始时间：</span>
-                          <span className="text-foreground">{new Date(event.start_time).toLocaleDateString()}</span>
+                                                      <span className="text-foreground">{timeUtils.formatBeijingTimeShort(event.start_time)}</span>
                         </div>
                         
                         {/* 操作按钮 */}
@@ -487,7 +509,7 @@ const AdminDashboard = () => {
                         <TableCell>{application.user_nickname || '未设置昵称'}</TableCell>
                         <TableCell className="font-medium">{application.organizer_name}</TableCell>
                         <TableCell>{application.contact_email}</TableCell>
-                        <TableCell>{new Date(application.created_at).toLocaleDateString()}</TableCell>
+                        <TableCell>{timeUtils.formatBeijingTimeShort(application.created_at)}</TableCell>
                         <TableCell>
                           <Badge variant="outline" className="text-yellow-600">
                             <Clock className="w-3 h-3 mr-1" />
@@ -538,7 +560,7 @@ const AdminDashboard = () => {
                           </div>
                           <div>
                             <span className="text-muted-foreground">申请时间：</span>
-                            <span className="text-foreground">{new Date(application.created_at).toLocaleDateString()}</span>
+                            <span className="text-foreground">{timeUtils.formatBeijingTimeShort(application.created_at)}</span>
                           </div>
                         </div>
                         

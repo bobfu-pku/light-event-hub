@@ -13,6 +13,7 @@ import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { User, Settings, Bell, Shield, Upload, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
+import { timeUtils } from '@/lib/utils';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 interface Profile {
@@ -662,7 +663,7 @@ const Profile = () => {
                   <div className="space-y-2 text-sm">
                     <p><span className="text-muted-foreground">用户ID:</span> {user.id}</p>
                     <p><span className="text-muted-foreground">注册邮箱:</span> {user.email}</p>
-                    <p><span className="text-muted-foreground">注册时间:</span> {new Date(user.created_at || '').toLocaleDateString('zh-CN')}</p>
+                    <p><span className="text-muted-foreground">注册时间:</span> {timeUtils.formatBeijingTimeShort(user.created_at || '')}</p>
                     <p><span className="text-muted-foreground">角色:</span> 
                       {profile?.roles?.map(role => (
                         <Badge key={role} variant="secondary" className="ml-2">

@@ -9,7 +9,10 @@ export type NotificationType =
   | 'organizer_approved'       // 主办方申请通过（申请者收到）
   | 'organizer_rejected'       // 主办方申请被拒（申请者收到）
   | 'discussion_reply'         // 讨论回复
-  | 'event_review_reminder';   // 活动评价提醒
+  | 'event_review'             // 活动评价（主办方收到）
+  | 'event_review_reminder'    // 活动评价提醒
+  | 'event_updated'            // 活动信息更新
+  | 'event_cancelled';         // 活动被取消
 
 interface CreateNotificationOptions {
   userId: string;
@@ -222,42 +225,152 @@ export const sendEventReviewReminders = async (eventId: string, eventTitle: stri
 };
 
 /**
+ * 创建活动更新通知（发送给所有报名者）
+ */
+export const createEventUpdateNotification = async (
+  eventId: string,
+  eventTitle: string,
+  updateMessage?: string
+) => {
+  try {
+    // 获取所有已报名的用户（包括待审核的用户）
+    const { data: registrations, error } = await supabase
+      .from('event_registrations')
+      .select('user_id')
+      .eq('event_id', eventId)
+      .in('status', ['pending', 'approved', 'payment_pending', 'paid', 'checked_in']);
+
+    if (error) throw error;
+
+    if (registrations && registrations.length > 0) {
+      // 批量创建通知
+      const notifications = registrations.map(registration => ({
+        user_id: registration.user_id,
+        title: '活动信息更新',
+        content: updateMessage || `您报名的活动"${eventTitle}"的信息已更新，请查看最新详情`,
+        type: 'event_updated' as NotificationType,
+        related_event_id: eventId,
+        is_read: false
+      }));
+
+      const { error: insertError } = await supabase
+        .from('notifications')
+        .insert(notifications);
+
+      if (insertError) throw insertError;
+
+      console.log(`已向 ${registrations.length} 位用户发送活动更新通知`);
+      return registrations.length;
+    }
+    return 0;
+  } catch (error) {
+    console.error('发送活动更新通知失败:', error);
+    throw error;
+  }
+};
+
+/**
+ * 创建活动取消通知（发送给所有报名者）
+ */
+export const createEventCancelledNotification = async (
+  eventId: string,
+  eventTitle: string,
+  cancelReason?: string
+) => {
+  try {
+    // 获取所有已报名的用户（包括待审核的用户）
+    const { data: registrations, error } = await supabase
+      .from('event_registrations')
+      .select('user_id')
+      .eq('event_id', eventId)
+      .in('status', ['pending', 'approved', 'payment_pending', 'paid', 'checked_in']);
+
+    if (error) throw error;
+
+    if (registrations && registrations.length > 0) {
+      // 批量创建通知
+      const notifications = registrations.map(registration => ({
+        user_id: registration.user_id,
+        title: '活动已取消',
+        content: cancelReason 
+          ? `很抱歉，您报名的活动"${eventTitle}"已被取消。取消原因：${cancelReason}`
+          : `很抱歉，您报名的活动"${eventTitle}"已被取消`,
+        type: 'event_cancelled' as NotificationType,
+        related_event_id: eventId,
+        is_read: false
+      }));
+
+      const { error: insertError } = await supabase
+        .from('notifications')
+        .insert(notifications);
+
+      if (insertError) throw insertError;
+
+      console.log(`已向 ${registrations.length} 位用户发送活动取消通知`);
+      return registrations.length;
+    }
+    return 0;
+  } catch (error) {
+    console.error('发送活动取消通知失败:', error);
+    throw error;
+  }
+};
+
+/**
  * 批量获取管理员用户ID
+ * 注意：这个函数需要根据实际的管理员定义方式来实现
  */
 export const getAdminUserIds = async (): Promise<string[]> => {
   try {
-    // 使用RPC函数来正确查询包含admin角色的用户
-    const { data, error } = await supabase.rpc('get_admin_user_ids');
-
-    if (error) {
-      console.error('RPC调用失败，尝试备用查询方法:', error);
-      // 备用方法：直接使用SQL查询
-      const { data: fallbackData, error: fallbackError } = await supabase
-        .from('profiles')
-        .select('user_id, roles');
-      
-      if (fallbackError) throw fallbackError;
-      
-      // 在客户端过滤包含admin角色的用户
-      const adminUsers = fallbackData.filter(profile => {
-        if (!profile.roles) return false;
-        // 处理数组格式的角色字段
-        if (Array.isArray(profile.roles)) {
-          return profile.roles.includes('admin');
-        }
-        // 处理字符串格式的角色字段 (如 "{user,admin}")
-        if (typeof profile.roles === 'string') {
-          return profile.roles.includes('admin');
-        }
-        return false;
-      });
-      
-      return adminUsers.map(profile => profile.user_id);
-    }
-
-    return data || [];
+    // 如果管理员是通过特定用户ID或其他字段定义的，需要相应调整查询
+    // 这里暂时返回空数组，需要根据具体的管理员定义方式来实现
+    console.log('获取管理员列表：暂时返回空数组，需要根据实际管理员定义方式实现');
+    return [];
   } catch (error) {
     console.error('获取管理员列表失败:', error);
     return [];
+  }
+};
+
+/**
+ * 创建活动评价通知（发送给主办方）
+ */
+export const createEventReviewNotification = async (
+  eventId: string,
+  eventTitle: string,
+  reviewerName: string,
+  rating: number
+) => {
+  try {
+    // 获取活动主办方信息
+    const { data: event, error: eventError } = await supabase
+      .from('events')
+      .select('organizer_id')
+      .eq('id', eventId)
+      .single();
+
+    if (eventError) throw eventError;
+
+    if (event?.organizer_id) {
+      const { error: insertError } = await supabase
+        .from('notifications')
+        .insert({
+          user_id: event.organizer_id,
+          title: '收到新的活动评价',
+          content: `${reviewerName} 对您的活动"${eventTitle}"给出了 ${rating} 星评价`,
+          type: 'event_review' as NotificationType,
+          related_event_id: eventId,
+          is_read: false
+        });
+
+      if (insertError) throw insertError;
+
+      console.log(`已向主办方发送活动评价通知`);
+      return true;
+    }
+    return false;
+  } catch (error) {
+    console.error('发送活动评价通知失败:', error);
+    throw error;
   }
 };

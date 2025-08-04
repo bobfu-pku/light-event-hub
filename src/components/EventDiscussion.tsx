@@ -5,9 +5,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { MessageSquare, Reply, Pin, MoreHorizontal, User } from 'lucide-react';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { MessageSquare, Reply, Pin, MoreHorizontal } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
+import { timeUtils } from '@/lib/utils';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -31,6 +33,7 @@ interface Discussion {
     avatar_url?: string;
   };
   replies?: Discussion[];
+  reply_to_nickname?: string; // 用于显示"回复 XX"
 }
 
 interface EventDiscussionProps {
@@ -47,6 +50,7 @@ const EventDiscussion: React.FC<EventDiscussionProps> = ({ eventId, organizerId 
   const [newTitle, setNewTitle] = useState('');
   const [replyContent, setReplyContent] = useState<{ [key: string]: string }>({});
   const [showReplyForm, setShowReplyForm] = useState<{ [key: string]: boolean }>({});
+  const [replyToReply, setReplyToReply] = useState<{ [key: string]: { parentId: string, nickname: string } }>({});
   const [posting, setPosting] = useState(false);
 
   useEffect(() => {
@@ -74,7 +78,6 @@ const EventDiscussion: React.FC<EventDiscussionProps> = ({ eventId, organizerId 
         `)
         .eq('event_id', eventId)
         .eq('is_deleted', false)
-        .order('is_pinned', { ascending: false })
         .order('created_at', { ascending: true });
 
       if (error) throw error;
@@ -95,14 +98,61 @@ const EventDiscussion: React.FC<EventDiscussionProps> = ({ eventId, organizerId 
         }
       });
 
-      // 添加回复到对应的讨论
+      // 添加回复到对应的讨论，所有回复都扁平化显示在主讨论下
       data?.forEach(item => {
         if (item.parent_id) {
           const parent = discussionMap.get(item.parent_id);
           if (parent) {
-            parent.replies.push(discussionMap.get(item.id));
+            // 找到最顶级的主讨论
+            let topLevelDiscussion = parent;
+            while (topLevelDiscussion.parent_id) {
+              topLevelDiscussion = discussionMap.get(topLevelDiscussion.parent_id);
+              if (!topLevelDiscussion) break;
+            }
+            
+            if (topLevelDiscussion) {
+              // 判断是否是一级回复（直接回复主讨论）
+              const isFirstLevelReply = !parent.parent_id;
+              
+              const replyWithTarget = {
+                ...discussionMap.get(item.id),
+                reply_to_nickname: isFirstLevelReply ? 
+                  undefined : // 一级回复不显示"回复 xx："
+                  (parent.author_id !== item.author_id ? (parent.profiles?.nickname || '匿名用户') : undefined) // 二级及以上回复显示"回复 xx："
+              };
+              
+              topLevelDiscussion.replies.push(replyWithTarget);
+            }
           }
         }
+      });
+
+      // 对每个讨论的回复按时间排序
+      topLevel.forEach(discussion => {
+        if (discussion.replies) {
+          discussion.replies.sort((a, b) => 
+            new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+          );
+        }
+      });
+
+      // 按最新活动时间排序（置顶讨论优先，然后按最新回复或创建时间排序）
+      topLevel.sort((a, b) => {
+        // 置顶讨论优先
+        if (a.is_pinned !== b.is_pinned) {
+          return a.is_pinned ? -1 : 1;
+        }
+        
+        // 计算最新活动时间
+        const getLatestTime = (discussion: Discussion) => {
+          const times = [discussion.created_at];
+          if (discussion.replies) {
+            times.push(...discussion.replies.map(r => r.created_at));
+          }
+          return Math.max(...times.map(t => new Date(t).getTime()));
+        };
+        
+        return getLatestTime(b) - getLatestTime(a);
       });
 
       setDiscussions(topLevel);
@@ -152,24 +202,41 @@ const EventDiscussion: React.FC<EventDiscussionProps> = ({ eventId, organizerId 
     }
   };
 
-  const handleReply = async (parentId: string) => {
-    if (!user || !replyContent[parentId]?.trim()) return;
+  const handleReply = async (replyId: string) => {
+    if (!user || !replyContent[replyId]?.trim()) return;
 
     try {
+      // 确定回复的目标ID（可能是讨论ID或回复ID）
+      const targetParentId = replyToReply[replyId]?.parentId || replyId;
+      
       const { error } = await supabase
         .from('event_discussions')
         .insert({
           event_id: eventId,
           author_id: user.id,
-          content: replyContent[parentId].trim(),
-          parent_id: parentId
+          content: replyContent[replyId].trim(),
+          parent_id: targetParentId
         });
 
       if (error) throw error;
 
-      // 查找原始讨论的作者，发送通知
-      const originalDiscussion = discussions.find(d => d.id === parentId);
-      if (originalDiscussion && originalDiscussion.author_id !== user.id) {
+      // 查找回复目标的作者，发送通知
+      let targetAuthorId = null;
+      
+      if (replyToReply[replyId]) {
+        // 回复的是二级回复
+        const targetDiscussion = discussions.find(d => d.id === replyToReply[replyId].parentId);
+        if (targetDiscussion) {
+          const targetReply = targetDiscussion.replies?.find(r => r.id === replyId);
+          targetAuthorId = targetReply?.author_id;
+        }
+      } else {
+        // 回复的是主讨论
+        const originalDiscussion = discussions.find(d => d.id === replyId);
+        targetAuthorId = originalDiscussion?.author_id;
+      }
+
+      if (targetAuthorId && targetAuthorId !== user.id) {
         try {
           // 获取活动信息
           const { data: event } = await supabase
@@ -187,7 +254,7 @@ const EventDiscussion: React.FC<EventDiscussionProps> = ({ eventId, organizerId 
 
           if (event) {
             await createDiscussionReplyNotification(
-              originalDiscussion.author_id,
+              targetAuthorId,
               event.title,
               profile?.nickname || 'Someone',
               eventId
@@ -203,8 +270,9 @@ const EventDiscussion: React.FC<EventDiscussionProps> = ({ eventId, organizerId 
         description: "您的回复已发布"
       });
 
-      setReplyContent(prev => ({ ...prev, [parentId]: '' }));
-      setShowReplyForm(prev => ({ ...prev, [parentId]: false }));
+      setReplyContent(prev => ({ ...prev, [replyId]: '' }));
+      setShowReplyForm(prev => ({ ...prev, [replyId]: false }));
+      setReplyToReply(prev => ({ ...prev, [replyId]: undefined }));
       fetchDiscussions();
     } catch (error: any) {
       console.error('Error posting reply:', error);
@@ -244,12 +312,7 @@ const EventDiscussion: React.FC<EventDiscussionProps> = ({ eventId, organizerId 
   };
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleString('zh-CN', {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+    return timeUtils.formatBeijingTimeShort(dateString);
   };
 
   const canModerate = user?.id === organizerId;
@@ -291,7 +354,7 @@ const EventDiscussion: React.FC<EventDiscussionProps> = ({ eventId, organizerId 
       )}
 
       {/* 讨论列表 */}
-      <div className="space-y-4">
+      <div className="space-y-3">
         {discussions.length === 0 ? (
           <Card>
             <CardContent className="text-center py-8">
@@ -301,36 +364,45 @@ const EventDiscussion: React.FC<EventDiscussionProps> = ({ eventId, organizerId 
           </Card>
         ) : (
           discussions.map((discussion) => (
-            <Card key={discussion.id} className={discussion.is_pinned ? "border-primary/50" : ""}>
-              <CardContent className="pt-6">
+            <Card key={discussion.id} className={`${discussion.is_pinned ? "border-primary/50" : ""} overflow-hidden`}>
+              <CardContent className="p-4">
                 {/* 主讨论 */}
-                <div className="space-y-3">
+                <div className="space-y-2">
                   <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="h-8 w-8 rounded-full bg-gradient-primary flex items-center justify-center">
-                        <User className="h-4 w-4 text-white" />
+                    <div className="flex items-start gap-3">
+                      <Avatar className="h-8 w-8 flex-shrink-0">
+                        <AvatarImage src={discussion.profiles?.avatar_url || ''} alt={discussion.profiles?.nickname || ''} />
+                        <AvatarFallback className="bg-blue-100 text-blue-600 text-sm">
+                          {discussion.profiles?.nickname?.charAt(0) || '匿'}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium text-sm truncate">
+                            {discussion.profiles?.nickname || '匿名用户'}
+                          </p>
+                          <p className="text-xs text-muted-foreground flex-shrink-0">
+                            {formatDate(discussion.created_at)}
+                          </p>
+                          {discussion.is_pinned && (
+                            <Badge variant="secondary" className="flex items-center gap-1 text-xs px-1.5 py-0.5">
+                              <Pin className="h-2.5 w-2.5" />
+                              置顶
+                            </Badge>
+                          )}
+                        </div>
+                        {discussion.title && (
+                          <h4 className="font-medium text-sm mt-1">{discussion.title}</h4>
+                        )}
+                        <p className="text-sm whitespace-pre-wrap mt-1 leading-relaxed">{discussion.content}</p>
                       </div>
-                      <div>
-                        <p className="font-medium text-sm">
-                          {discussion.profiles?.nickname || '匿名用户'}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {formatDate(discussion.created_at)}
-                        </p>
-                      </div>
-                      {discussion.is_pinned && (
-                        <Badge variant="secondary" className="flex items-center gap-1">
-                          <Pin className="h-3 w-3" />
-                          置顶
-                        </Badge>
-                      )}
                     </div>
                     
                     {canModerate && (
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                            <MoreHorizontal className="h-4 w-4" />
+                          <Button variant="ghost" size="sm" className="h-6 w-6 p-0 flex-shrink-0">
+                            <MoreHorizontal className="h-3 w-3" />
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
@@ -344,13 +416,7 @@ const EventDiscussion: React.FC<EventDiscussionProps> = ({ eventId, organizerId 
                     )}
                   </div>
                   
-                  {discussion.title && (
-                    <h4 className="font-medium">{discussion.title}</h4>
-                  )}
-                  
-                  <p className="text-sm whitespace-pre-wrap">{discussion.content}</p>
-                  
-                  <div className="flex items-center gap-4 pt-2">
+                  <div className="flex items-center gap-4 pl-11">
                     {user && (
                       <Button
                         variant="ghost"
@@ -359,9 +425,9 @@ const EventDiscussion: React.FC<EventDiscussionProps> = ({ eventId, organizerId 
                           ...prev,
                           [discussion.id]: !prev[discussion.id]
                         }))}
-                        className="text-muted-foreground hover:text-foreground"
+                        className="text-muted-foreground hover:text-foreground h-6 px-2 text-xs"
                       >
-                        <Reply className="h-4 w-4 mr-1" />
+                        <Reply className="h-3 w-3 mr-1" />
                         回复
                       </Button>
                     )}
@@ -375,7 +441,12 @@ const EventDiscussion: React.FC<EventDiscussionProps> = ({ eventId, organizerId 
 
                 {/* 回复表单 */}
                 {showReplyForm[discussion.id] && user && (
-                  <div className="mt-4 pl-11 space-y-3">
+                  <div className="mt-3 pl-11 space-y-2">
+                    {replyToReply[discussion.id] && (
+                      <p className="text-xs text-muted-foreground">
+                        回复 {replyToReply[discussion.id].nickname}
+                      </p>
+                    )}
                     <Textarea
                       placeholder="写下您的回复..."
                       value={replyContent[discussion.id] || ''}
@@ -384,23 +455,25 @@ const EventDiscussion: React.FC<EventDiscussionProps> = ({ eventId, organizerId 
                         [discussion.id]: e.target.value
                       }))}
                       rows={2}
+                      className="text-sm"
                     />
                     <div className="flex gap-2">
                       <Button
                         size="sm"
                         onClick={() => handleReply(discussion.id)}
                         disabled={!replyContent[discussion.id]?.trim()}
-                        className="bg-gradient-primary hover:opacity-90"
+                        className="bg-gradient-primary hover:opacity-90 h-7 px-3 text-xs"
                       >
                         发布回复
                       </Button>
                       <Button
                         size="sm"
                         variant="ghost"
-                        onClick={() => setShowReplyForm(prev => ({
-                          ...prev,
-                          [discussion.id]: false
-                        }))}
+                        onClick={() => {
+                          setShowReplyForm(prev => ({ ...prev, [discussion.id]: false }));
+                          setReplyToReply(prev => ({ ...prev, [discussion.id]: undefined }));
+                        }}
+                        className="h-7 px-3 text-xs"
                       >
                         取消
                       </Button>
@@ -410,23 +483,93 @@ const EventDiscussion: React.FC<EventDiscussionProps> = ({ eventId, organizerId 
 
                 {/* 回复列表 */}
                 {discussion.replies && discussion.replies.length > 0 && (
-                  <div className="mt-4 pl-11 space-y-4">
+                  <div className="mt-3 pl-11 space-y-3">
                     {discussion.replies.map((reply) => (
-                      <div key={reply.id} className="border-l-2 border-muted pl-4 space-y-2">
-                        <div className="flex items-center gap-3">
-                          <div className="h-6 w-6 rounded-full bg-gradient-subtle flex items-center justify-center">
-                            <User className="h-3 w-3 text-muted-foreground" />
-                          </div>
-                          <div>
-                            <p className="font-medium text-sm">
-                              {reply.profiles?.nickname || '匿名用户'}
+                      <div key={reply.id} className="border-l-2 border-muted pl-3">
+                        <div className="flex items-start gap-2">
+                          <Avatar className="h-6 w-6 flex-shrink-0">
+                            <AvatarImage src={reply.profiles?.avatar_url || ''} alt={reply.profiles?.nickname || ''} />
+                            <AvatarFallback className="bg-blue-100 text-blue-600 text-xs">
+                              {reply.profiles?.nickname?.charAt(0) || '匿'}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <p className="font-medium text-xs truncate">
+                                {reply.profiles?.nickname || '匿名用户'}
+                              </p>
+                              <p className="text-xs text-muted-foreground flex-shrink-0">
+                                {formatDate(reply.created_at)}
+                              </p>
+                            </div>
+                            <p className="text-sm whitespace-pre-wrap leading-relaxed">
+                              {reply.reply_to_nickname && (
+                                <span className="text-muted-foreground">回复 {reply.reply_to_nickname}：</span>
+                              )}
+                              {reply.content}
                             </p>
-                            <p className="text-xs text-muted-foreground">
-                              {formatDate(reply.created_at)}
-                            </p>
+                            {user && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  setShowReplyForm(prev => ({ ...prev, [reply.id]: !prev[reply.id] }));
+                                  setReplyToReply(prev => ({
+                                    ...prev,
+                                    [reply.id]: {
+                                      parentId: discussion.id,
+                                      nickname: reply.profiles?.nickname || '匿名用户'
+                                    }
+                                  }));
+                                }}
+                                className="text-muted-foreground hover:text-foreground h-5 px-2 text-xs mt-1"
+                              >
+                                <Reply className="h-2.5 w-2.5 mr-1" />
+                                回复
+                              </Button>
+                            )}
                           </div>
                         </div>
-                        <p className="text-sm whitespace-pre-wrap pl-9">{reply.content}</p>
+                        
+                        {/* 二级回复表单 */}
+                        {showReplyForm[reply.id] && user && (
+                          <div className="mt-2 pl-8 space-y-2">
+                            <p className="text-xs text-muted-foreground">
+                              回复 {reply.profiles?.nickname || '匿名用户'}
+                            </p>
+                            <Textarea
+                              placeholder="写下您的回复..."
+                              value={replyContent[reply.id] || ''}
+                              onChange={(e) => setReplyContent(prev => ({
+                                ...prev,
+                                [reply.id]: e.target.value
+                              }))}
+                              rows={2}
+                              className="text-sm"
+                            />
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                onClick={() => handleReply(reply.id)}
+                                disabled={!replyContent[reply.id]?.trim()}
+                                className="bg-gradient-primary hover:opacity-90 h-7 px-3 text-xs"
+                              >
+                                发布回复
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => {
+                                  setShowReplyForm(prev => ({ ...prev, [reply.id]: false }));
+                                  setReplyToReply(prev => ({ ...prev, [reply.id]: undefined }));
+                                }}
+                                className="h-7 px-3 text-xs"
+                              >
+                                取消
+                              </Button>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>

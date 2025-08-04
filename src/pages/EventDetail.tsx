@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Calendar, MapPin, Users, Clock, Phone, Mail, Star, MessageSquare, CreditCard, CheckCircle } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
+import { timeUtils } from '@/lib/utils';
 import EventDiscussion from '@/components/EventDiscussion';
 import EventReviews from '@/components/EventReviews';
 import { createEventRegistrationNotification } from '@/lib/notifications';
@@ -28,6 +29,7 @@ interface Event {
   requires_approval: boolean;
   registration_deadline?: string;
   organizer_id: string;
+  status: string;
   profiles: {
     organizer_name?: string;
     nickname?: string;
@@ -48,6 +50,7 @@ const EventDetail = () => {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
   const { toast } = useToast();
+  const [searchParams] = useSearchParams();
   const [event, setEvent] = useState<Event | null>(null);
   const [registration, setRegistration] = useState<Registration | null>(null);
   const [loading, setLoading] = useState(true);
@@ -62,6 +65,14 @@ const EventDetail = () => {
       }
     }
   }, [id, user]);
+
+  // 处理URL参数设置默认tab
+  useEffect(() => {
+    const tab = searchParams.get('tab');
+    if (tab && ['details', 'discussion', 'reviews'].includes(tab)) {
+      setActiveTab(tab);
+    }
+  }, [searchParams]);
 
   const fetchEvent = async () => {
     try {
@@ -125,12 +136,46 @@ const EventDetail = () => {
 
     setRegistering(true);
     try {
+      // 检查人数限制
+      if (event.max_participants && event.max_participants > 0) {
+        // 对于不需要审核的活动，检查已有效报名的人数（approved, paid, checked_in）
+        // 对于需要审核的活动，可以暂时允许pending状态，由管理员控制
+        const statusesToCheck = event.requires_approval 
+          ? ['approved', 'paid', 'checked_in'] as const  // 需要审核的活动，只计算已通过的人数
+          : ['approved', 'payment_pending', 'paid', 'checked_in'] as const; // 不需要审核的活动，计算所有有效状态
+
+        const { data: existingRegistrations, error: countError } = await supabase
+          .from('event_registrations')
+          .select('id')
+          .eq('event_id', event.id)
+          .in('status', statusesToCheck);
+
+        if (countError) throw countError;
+
+        const currentParticipants = existingRegistrations?.length || 0;
+        
+        if (currentParticipants >= event.max_participants) {
+          toast({
+            title: "报名已满",
+            description: `该活动限制${event.max_participants}人，目前已有${currentParticipants}人报名`,
+            variant: "destructive"
+          });
+          return;
+        }
+      }
+
       // Get user profile for registration info
       const { data: profile } = await supabase
         .from('profiles')
         .select('nickname, contact_email, contact_phone')
         .eq('user_id', user.id)
         .single();
+
+      // 对于免费活动且不需要审核的情况，直接生成核验码
+      let verificationCode = null;
+      if (!event.requires_approval && !event.is_paid) {
+        verificationCode = generateVerificationCode();
+      }
 
       const { error } = await supabase
         .from('event_registrations')
@@ -141,7 +186,8 @@ const EventDetail = () => {
           participant_email: profile?.contact_email || user.email,
           participant_phone: profile?.contact_phone || '',
           status: event.requires_approval ? 'pending' : (event.is_paid ? 'payment_pending' : 'approved'),
-          payment_amount: event.is_paid ? event.price : 0
+          payment_amount: event.is_paid ? event.price : 0,
+          verification_code: verificationCode
         });
 
       if (error) throw error;
@@ -181,7 +227,7 @@ const EventDetail = () => {
 
     try {
       // Generate verification code and update status to paid
-      const verificationCode = await generateVerificationCode();
+      const verificationCode = generateVerificationCode();
       const { error } = await supabase
         .from('event_registrations')
         .update({ 
@@ -207,10 +253,13 @@ const EventDetail = () => {
     }
   };
 
-  const generateVerificationCode = async () => {
-    const { data, error } = await supabase.rpc('generate_verification_code');
-    if (error) throw error;
-    return data;
+  const generateVerificationCode = () => {
+    const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let result = '';
+    for (let i = 0; i < 8; i++) {
+      result += characters.charAt(Math.floor(Math.random() * characters.length));
+    }
+    return result;
   };
 
   const getEventTypeLabel = (type: string) => {
@@ -241,17 +290,14 @@ const EventDetail = () => {
   };
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleString('zh-CN', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+    return timeUtils.formatBeijingTime(dateString);
   };
 
   const canRegister = () => {
     if (!event || !user || registration) return false;
+    
+    // 草稿状态下无法报名
+    if (event.status === 'draft') return false;
     
     const now = new Date();
     const registrationDeadline = event.registration_deadline ? new Date(event.registration_deadline) : new Date(event.start_time);
@@ -261,6 +307,7 @@ const EventDetail = () => {
 
   const getRegistrationButtonText = () => {
     if (!user) return "登录后报名";
+    if (event?.status === 'draft') return "草稿无法报名";
     if (registration) {
       if (registration.status === 'payment_pending') return "待支付";
       return `已报名 (${getStatusLabel(registration.status)})`;
@@ -303,18 +350,22 @@ const EventDetail = () => {
           <img
             src={event.cover_image_url}
             alt={event.title}
-            className="w-full h-64 md:h-80 object-cover rounded-lg"
+            className="w-full aspect-video object-cover rounded-lg"
           />
         ) : (
-          <div className="w-full h-64 md:h-80 bg-gradient-primary rounded-lg flex items-center justify-center">
+          <div className="w-full aspect-video bg-gradient-primary rounded-lg flex items-center justify-center">
             <Calendar className="h-20 w-20 text-white/50" />
           </div>
         )}
         <div className="absolute inset-0 bg-black/30 rounded-lg"></div>
         <div className="absolute bottom-6 left-6 text-white">
-          <Badge className="mb-2 bg-white/20 text-white border-white/30">
-            {getEventTypeLabel(event.event_type)}
-          </Badge>
+          {event.status === 'draft' && (
+            <div className="mb-2">
+              <Badge className="bg-orange-500/80 text-white border-orange-300">
+                草稿
+              </Badge>
+            </div>
+          )}
           <h1 className="text-3xl md:text-4xl font-bold mb-2">{event.title}</h1>
           <p className="text-lg opacity-90">
             主办方: {event.profiles?.organizer_name || event.profiles?.nickname}
@@ -325,7 +376,7 @@ const EventDetail = () => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Main Content */}
         <div className="lg:col-span-2">
-          <Tabs defaultValue="details" className="w-full" onValueChange={setActiveTab}>
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="details">活动详情</TabsTrigger>
               <TabsTrigger value="discussion">讨论区</TabsTrigger>
@@ -346,11 +397,31 @@ const EventDetail = () => {
             </TabsContent>
             
             <TabsContent value="discussion" className="mt-6">
-              <EventDiscussion eventId={event.id} organizerId={event.organizer_id} />
+              {event.status === 'draft' ? (
+                <Card>
+                  <CardContent className="text-center p-8">
+                    <MessageSquare className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                    <h3 className="text-lg font-semibold mb-2">草稿活动讨论区暂不可用</h3>
+
+                  </CardContent>
+                </Card>
+              ) : (
+                <EventDiscussion eventId={event.id} organizerId={event.organizer_id} />
+              )}
             </TabsContent>
             
             <TabsContent value="reviews" className="mt-6">
-              <EventReviews eventId={event.id} eventEndTime={event.end_time} />
+              {event.status === 'draft' ? (
+                <Card>
+                  <CardContent className="text-center p-8">
+                    <Star className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                    <h3 className="text-lg font-semibold mb-2">草稿活动评价功能暂不可用</h3>
+
+                  </CardContent>
+                </Card>
+              ) : (
+                <EventReviews eventId={event.id} eventEndTime={event.end_time} />
+              )}
             </TabsContent>
           </Tabs>
         </div>
@@ -364,7 +435,7 @@ const EventDetail = () => {
               <CardTitle>活动报名</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {event.is_paid && (
+              {event.is_paid && event.status !== 'draft' && (
                 <div className="text-center p-4 bg-gradient-subtle rounded-lg">
                   <p className="text-2xl font-bold gradient-text">¥{event.price}</p>
                   <p className="text-sm text-muted-foreground">活动费用</p>
@@ -420,14 +491,14 @@ const EventDetail = () => {
               {registration && (
                 <div className="text-center text-sm text-muted-foreground space-y-2">
                   <div>报名状态: {getStatusLabel(registration.status)}</div>
-                  {registration.verification_code && registration.status === 'paid' && (
+                  {registration.verification_code && ['approved', 'paid', 'checked_in'].includes(registration.status) && (
                     <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
-                      <p className="text-sm font-medium text-green-800">核验码</p>
+                      <p className="text-sm font-medium text-green-800">签到核验码</p>
                       <p className="text-lg font-mono font-bold text-green-900">
                         {registration.verification_code}
                       </p>
                       <p className="text-xs text-green-600 mt-1">
-                        请在活动现场出示此核验码
+                        请在活动现场出示此核验码进行签到
                       </p>
                     </div>
                   )}

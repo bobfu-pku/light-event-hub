@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Camera, X, QrCode } from 'lucide-react';
+import { Camera, X, QrCode, AlertCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { BarcodeScanner } from '@capacitor-community/barcode-scanner';
 import { Capacitor } from '@capacitor/core';
@@ -15,38 +15,33 @@ interface QRCodeScannerProps {
 const QRCodeScanner: React.FC<QRCodeScannerProps> = ({ onScanSuccess, children }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
-  const [isSupported, setIsSupported] = useState(false);
-  const [isNative, setIsNative] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const qrScannerRef = useRef<QrScanner | null>(null);
   const { toast } = useToast();
 
+  // 检查是否为原生应用
+  const isNative = Capacitor.isNativePlatform();
+
+  // 组件卸载时清理资源
   useEffect(() => {
-    const checkSupport = async () => {
-      const isNativePlatform = Capacitor.isNativePlatform();
-      setIsNative(isNativePlatform);
-      
-      if (isNativePlatform) {
-        setIsSupported(true);
-      } else {
-        // For web browsers, check if we have getUserMedia support
-        try {
-          const hasCamera = await QrScanner.hasCamera();
-          setIsSupported(hasCamera);
-        } catch (error) {
-          // Fallback: assume camera is available on mobile browsers
-          const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-          setIsSupported(isMobile || !!navigator.mediaDevices?.getUserMedia);
-        }
+    return () => {
+      if (qrScannerRef.current) {
+        qrScannerRef.current.stop();
+        qrScannerRef.current.destroy();
+      }
+      if (isNative && isScanning) {
+        BarcodeScanner.showBackground();
+        BarcodeScanner.stopScan();
+        document.body.style.background = '';
       }
     };
-    
-    checkSupport();
-  }, []);
+  }, [isNative, isScanning]);
 
   const startScan = async () => {
     try {
       setIsScanning(true);
+      setError(null);
       
       if (isNative) {
         // Native app scanning
@@ -67,43 +62,79 @@ const QRCodeScanner: React.FC<QRCodeScannerProps> = ({ onScanSuccess, children }
             });
           }
         } else {
-          toast({
-            title: '权限错误',
-            description: '需要摄像头权限才能扫描二维码',
-            variant: 'destructive'
-          });
+          throw new Error('需要摄像头权限才能扫描二维码');
         }
       } else {
         // Web browser scanning
-        if (videoRef.current) {
-          qrScannerRef.current = new QrScanner(
-            videoRef.current,
-            (result) => {
-              onScanSuccess(result.data);
-              setIsOpen(false);
-              toast({
-                title: '扫描成功',
-                description: `识别到核验码: ${result.data}`
-              });
-              stopScan();
-            },
-            {
-              highlightScanRegion: true,
-              highlightCodeOutline: true,
-            }
-          );
-          
-          await qrScannerRef.current.start();
+        if (!videoRef.current) {
+          throw new Error('视频元素未准备好');
+        }
+
+        // 检查是否为HTTPS环境 (本地开发环境除外)
+        if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+          throw new Error('二维码扫描需要在安全连接(HTTPS)下使用');
+        }
+
+        // 检查浏览器是否支持相机
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          throw new Error('当前浏览器不支持相机功能');
+        }
+
+        qrScannerRef.current = new QrScanner(
+          videoRef.current,
+          (result) => {
+            onScanSuccess(result.data);
+            setIsOpen(false);
+            toast({
+              title: '扫描成功',
+              description: `识别到核验码: ${result.data}`
+            });
+            stopScan();
+          },
+          {
+            highlightScanRegion: true,
+            highlightCodeOutline: true,
+            returnDetailedScanResult: true
+          }
+        );
+        
+        await qrScannerRef.current.start();
+        
+        // 检查相机是否真的启动了
+        if (!qrScannerRef.current.hasFlash && !await QrScanner.hasCamera()) {
+          throw new Error('未检测到可用的摄像头');
         }
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error scanning QR code:', error);
+      
+      let errorMessage = '无法启动二维码扫描器';
+      
+      if (error.name === 'NotAllowedError') {
+        errorMessage = '需要允许访问摄像头权限，请在浏览器设置中允许摄像头访问';
+      } else if (error.name === 'NotFoundError') {
+        errorMessage = '未找到可用的摄像头设备';
+      } else if (error.name === 'NotSupportedError') {
+        errorMessage = '当前设备不支持相机功能';
+      } else if (error.name === 'NotReadableError') {
+        errorMessage = '摄像头被其他应用占用，请关闭其他使用摄像头的应用';
+      } else if (error.name === 'AbortError') {
+        errorMessage = '摄像头启动被中断';
+      } else if (error.name === 'SecurityError') {
+        errorMessage = '安全限制，请确保在安全连接(HTTPS)环境下使用';
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      setError(errorMessage);
+      setIsScanning(false);
+      
       toast({
         title: '扫描失败',
-        description: '无法启动二维码扫描器',
+        description: errorMessage,
         variant: 'destructive'
       });
-      setIsScanning(false);
+      
       stopScan();
     }
   };
@@ -114,11 +145,14 @@ const QRCodeScanner: React.FC<QRCodeScannerProps> = ({ onScanSuccess, children }
       BarcodeScanner.stopScan();
       document.body.style.background = '';
     } else {
-      qrScannerRef.current?.stop();
-      qrScannerRef.current?.destroy();
-      qrScannerRef.current = null;
+      if (qrScannerRef.current) {
+        qrScannerRef.current.stop();
+        qrScannerRef.current.destroy();
+        qrScannerRef.current = null;
+      }
     }
     setIsScanning(false);
+    setError(null);
   };
 
   const handleClose = () => {
@@ -127,31 +161,6 @@ const QRCodeScanner: React.FC<QRCodeScannerProps> = ({ onScanSuccess, children }
     }
     setIsOpen(false);
   };
-
-  // For web browsers, show a simple fallback
-  if (!isSupported) {
-    return (
-      <Dialog open={isOpen} onOpenChange={setIsOpen}>
-        <DialogTrigger asChild>
-          {children}
-        </DialogTrigger>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>二维码扫描</DialogTitle>
-          </DialogHeader>
-          <div className="text-center py-8">
-            <QrCode className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
-            <p className="text-muted-foreground mb-4">
-              二维码扫描功能需要在移动设备上使用
-            </p>
-            <p className="text-sm text-muted-foreground">
-              请在手机或平板电脑上打开此应用以使用扫描功能
-            </p>
-          </div>
-        </DialogContent>
-      </Dialog>
-    );
-  }
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
@@ -163,18 +172,53 @@ const QRCodeScanner: React.FC<QRCodeScannerProps> = ({ onScanSuccess, children }
           <DialogTitle>扫描二维码</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
-          {!isScanning ? (
+          {error ? (
+            // 错误状态
+            <div className="text-center py-8">
+              <AlertCircle className="h-16 w-16 text-destructive mx-auto mb-4" />
+              <p className="text-destructive mb-4 font-medium">扫描失败</p>
+              <p className="text-sm text-muted-foreground mb-6">{error}</p>
+              <div className="space-y-2">
+                <Button 
+                  onClick={() => {
+                    setError(null);
+                    startScan();
+                  }} 
+                  className="w-full"
+                >
+                  <Camera className="h-4 w-4 mr-2" />
+                  重试扫描
+                </Button>
+                <Button 
+                  variant="outline"
+                  onClick={handleClose}
+                  className="w-full"
+                >
+                  关闭
+                </Button>
+              </div>
+            </div>
+          ) : !isScanning ? (
+            // 准备状态
             <div className="text-center py-4">
               <Camera className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
               <p className="text-muted-foreground mb-4">
                 点击下方按钮开始扫描核验码
               </p>
-              <Button onClick={startScan} className="w-full">
-                <Camera className="h-4 w-4 mr-2" />
-                开始扫描
-              </Button>
+              <div className="space-y-2">
+                <Button onClick={startScan} className="w-full">
+                  <Camera className="h-4 w-4 mr-2" />
+                  开始扫描
+                </Button>
+                {!isNative && (
+                  <p className="text-xs text-muted-foreground">
+                    请确保允许浏览器访问摄像头权限
+                  </p>
+                )}
+              </div>
             </div>
           ) : (
+            // 扫描状态
             <div className="text-center py-4">
               <div className="relative">
                 {isNative ? (
@@ -187,6 +231,7 @@ const QRCodeScanner: React.FC<QRCodeScannerProps> = ({ onScanSuccess, children }
                     className="w-full h-64 rounded-lg bg-black"
                     playsInline
                     muted
+                    autoPlay
                   />
                 )}
                 <div className="absolute inset-0 border-2 border-primary rounded-lg animate-pulse"></div>

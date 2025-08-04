@@ -8,10 +8,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Calendar, MapPin, Users, ArrowLeft, Edit, Trash2, Eye, Check, X, UserCheck, QrCode, Scan } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
+import { timeUtils } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import QRCodeScanner from '@/components/QRCodeScanner';
-import { createRegistrationStatusNotification, createEventRegistrationNotification } from '@/lib/notifications';
+import { createRegistrationStatusNotification, createEventRegistrationNotification, createEventCancelledNotification, createNotification } from '@/lib/notifications';
 
 interface Event {
   id: string;
@@ -103,9 +104,44 @@ const ManageEvent = () => {
   };
 
   const handleDeleteEvent = async () => {
-    if (!event || !confirm('确定要删除这个活动吗？此操作不可撤销。')) return;
+    if (!event || !confirm('确定要删除这个活动吗？此操作不可撤销。所有报名者将收到活动取消通知。')) return;
 
     try {
+      // 先获取所有需要通知的用户，避免级联删除影响
+      const { data: registrations, error: registrationsError } = await supabase
+        .from('event_registrations')
+        .select('user_id')
+        .eq('event_id', event.id)
+        .in('status', ['pending', 'approved', 'payment_pending', 'paid', 'checked_in']);
+
+      if (registrationsError) {
+        console.error('获取报名用户失败:', registrationsError);
+      }
+
+      const userIds = registrations?.map(r => r.user_id) || [];
+      
+      // 先创建通知记录（在删除活动前）
+      if (userIds.length > 0) {
+        try {
+          // 使用 createNotification 函数（通过 RPC）为每个用户创建通知
+          const notificationPromises = userIds.map(userId => 
+            createNotification({
+              userId,
+              title: '活动已取消',
+              content: `很抱歉，您报名的活动"${event.title}"已被取消。取消原因：主办方取消了此活动`,
+              type: 'event_cancelled',
+              relatedEventId: event.id
+            })
+          );
+
+          await Promise.all(notificationPromises);
+          console.log(`已向 ${userIds.length} 位用户发送活动取消通知`);
+        } catch (notificationError) {
+          console.error('发送取消通知失败:', notificationError);
+        }
+      }
+
+      // 删除活动（级联删除会删除所有相关记录）
       const { error } = await supabase
         .from('events')
         .delete()
@@ -115,7 +151,9 @@ const ManageEvent = () => {
 
       toast({
         title: '成功',
-        description: '活动已删除'
+        description: userIds.length > 0 
+          ? `活动已删除，已通知所有 ${userIds.length} 位报名者`
+          : '活动已删除'
       });
       navigate('/my-events');
     } catch (error) {
@@ -127,6 +165,8 @@ const ManageEvent = () => {
       });
     }
   };
+
+
 
 
   const handleRejectRegistration = async (registrationId: string) => {
@@ -182,11 +222,14 @@ const ManageEvent = () => {
 
   const handleCheckIn = async (registrationId: string) => {
     try {
+      // 使用当前UTC时间作为签到时间
+      const currentUTCTime = new Date().toISOString();
+      
       const { error } = await supabase
         .from('event_registrations')
         .update({ 
           status: 'checked_in',
-          checked_in_at: new Date().toISOString(),
+          checked_in_at: currentUTCTime,
           checked_in_by: user?.id
         })
         .eq('id', registrationId);
@@ -307,14 +350,53 @@ const ManageEvent = () => {
     }
   };
 
+  // 客户端生成核验码函数
+  const generateVerificationCode = () => {
+    const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let result = '';
+    for (let i = 0; i < 8; i++) {
+      result += characters.charAt(Math.floor(Math.random() * characters.length));
+    }
+    return result;
+  };
+
   const handleApproveAndPayment = async (registrationId: string) => {
     try {
       const registration = registrations.find(r => r.id === registrationId);
       const isPaymentEvent = event?.is_paid;
       
+      // 检查人数限制
+      if (event?.max_participants && event.max_participants > 0) {
+        // 计算当前已通过审核的人数（approved, payment_pending, paid, checked_in）
+        const approvedRegistrations = registrations.filter(r => 
+          r.id !== registrationId && // 排除当前正在审核的报名
+          ['approved', 'payment_pending', 'paid', 'checked_in'].includes(r.status)
+        );
+
+        const currentApprovedCount = approvedRegistrations.length;
+        
+        if (currentApprovedCount >= event.max_participants) {
+          toast({
+            title: '人数已满',
+            description: `该活动限制${event.max_participants}人，目前已审核通过${currentApprovedCount}人`,
+            variant: 'destructive'
+          });
+          return;
+        }
+      }
+      
+      // 对于免费活动，生成核验码（使用客户端生成）
+      let verificationCode = null;
+      if (!isPaymentEvent) {
+        verificationCode = generateVerificationCode();
+      }
+
       const { error } = await supabase
         .from('event_registrations')
-        .update({ status: isPaymentEvent ? 'payment_pending' : 'approved' })
+        .update({ 
+          status: isPaymentEvent ? 'payment_pending' : 'approved',
+          verification_code: verificationCode
+        })
         .eq('id', registrationId);
 
       if (error) throw error;
@@ -356,13 +438,20 @@ const ManageEvent = () => {
   };
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('zh-CN', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+    return timeUtils.formatBeijingTime(dateString);
+  };
+
+  // 计算活动的实际状态（考虑时间）
+  const getActualEventStatus = (event: Event) => {
+    const now = new Date();
+    const endTime = new Date(event.end_time);
+    
+    // 如果当前时间超过活动结束时间，状态应为已结束
+    if (now > endTime) {
+      return 'ended';
+    }
+    
+    return event.status;
   };
 
   const getStatusLabel = (status: string) => {
@@ -437,7 +526,7 @@ const ManageEvent = () => {
           <CardHeader>
             <div className="flex justify-between items-start">
               <CardTitle className="text-xl">{event.title}</CardTitle>
-              <Badge>{getStatusLabel(event.status)}</Badge>
+              <Badge>{getStatusLabel(getActualEventStatus(event))}</Badge>
             </div>
           </CardHeader>
           <CardContent>
@@ -467,76 +556,78 @@ const ManageEvent = () => {
             <CardTitle>操作</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={() => navigate(`/events/${event.id}`)}
-            >
-              <Eye className="h-4 w-4 mr-2" />
-              预览活动
-            </Button>
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={() => navigate(`/events/${event.id}/edit`)}
-            >
-              <Edit className="h-4 w-4 mr-2" />
-              编辑活动
-            </Button>
-            <Dialog open={showVerifyDialog} onOpenChange={setShowVerifyDialog}>
-              <DialogTrigger asChild>
-                <Button variant="outline" className="w-full">
-                  <QrCode className="h-4 w-4 mr-2" />
-                  手动验证
+            {getActualEventStatus(event) === 'ended' ? (
+              <div className="text-center py-6 text-muted-foreground">
+                <div className="text-sm">活动已结束，不支持操作活动</div>
+              </div>
+            ) : (
+              <>
+                <Dialog open={showVerifyDialog} onOpenChange={setShowVerifyDialog}>
+                  <DialogTrigger asChild>
+                    <Button variant="outline" className="w-full">
+                      <QrCode className="h-4 w-4 mr-2" />
+                      手动核验
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>输入核验码</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                      <Input
+                        placeholder="请输入8位核验码"
+                        value={verifyCode}
+                        onChange={(e) => setVerifyCode(e.target.value.toUpperCase())}
+                        maxLength={8}
+                        className="text-center font-mono text-lg"
+                      />
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          className="flex-1"
+                          onClick={() => {
+                            setVerifyCode('');
+                            setShowVerifyDialog(false);
+                          }}
+                        >
+                          取消
+                        </Button>
+                        <Button
+                          className="flex-1"
+                          onClick={handleVerifyCode}
+                        >
+                          验证核验码
+                        </Button>
+                      </div>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+                {/* <QRCodeScanner onScanSuccess={handleQRScanSuccess}>
+                  <Button variant="outline" className="w-full">
+                    <Scan className="h-4 w-4 mr-2" />
+                    二维码核验
+                  </Button>
+                </QRCodeScanner> */}
+
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => navigate(`/events/create?id=${event.id}`)}
+                >
+                  <Edit className="h-4 w-4 mr-2" />
+                  编辑活动
                 </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>输入核验码</DialogTitle>
-                </DialogHeader>
-                <div className="space-y-4">
-                  <Input
-                    placeholder="请输入8位核验码"
-                    value={verifyCode}
-                    onChange={(e) => setVerifyCode(e.target.value.toUpperCase())}
-                    maxLength={8}
-                    className="text-center font-mono text-lg"
-                  />
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      className="flex-1"
-                      onClick={() => {
-                        setVerifyCode('');
-                        setShowVerifyDialog(false);
-                      }}
-                    >
-                      取消
-                    </Button>
-                    <Button
-                      className="flex-1"
-                      onClick={handleVerifyCode}
-                    >
-                      验证核验码
-                    </Button>
-                  </div>
-                </div>
-              </DialogContent>
-            </Dialog>
-            <QRCodeScanner onScanSuccess={handleQRScanSuccess}>
-              <Button variant="outline" className="w-full">
-                <Scan className="h-4 w-4 mr-2" />
-                扫描二维码
-              </Button>
-            </QRCodeScanner>
-            <Button
-              variant="destructive"
-              className="w-full"
-              onClick={handleDeleteEvent}
-            >
-              <Trash2 className="h-4 w-4 mr-2" />
-              删除活动
-            </Button>
+
+                <Button
+                  variant="destructive"
+                  className="w-full"
+                  onClick={handleDeleteEvent}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  删除活动
+                </Button>
+              </>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -577,22 +668,16 @@ const ManageEvent = () => {
                         )}
                       </div>
                       <div className="text-right flex flex-col items-end gap-3">
-                        <div className="flex flex-col items-end gap-2">
-                          <Badge>{getStatusLabel(registration.status)}</Badge>
-                          {registration.payment_amount && registration.payment_amount > 0 && (
-                            <p className="text-sm">¥{registration.payment_amount}</p>
-                          )}
-                        </div>
-                        
+
                         {/* Action buttons based on status */}
-                        <div className="flex gap-2">
+                        <div className="flex flex-col gap-2">
                           {registration.status === 'pending' && (
                             <>
                               <Button
                                 variant="outline"
                                 size="sm"
                                 onClick={() => handleApproveAndPayment(registration.id)}
-                                className="text-green-600 hover:bg-green-50"
+                                className="text-green-600 hover:bg-green-50 min-w-[80px]"
                               >
                                 <Check className="h-4 w-4 mr-1" />
                                 通过
@@ -601,7 +686,7 @@ const ManageEvent = () => {
                                 variant="outline"
                                 size="sm"
                                 onClick={() => handleRejectRegistration(registration.id)}
-                                className="text-red-600 hover:bg-red-50"
+                                className="text-red-600 hover:bg-red-50 min-w-[80px]"
                               >
                                 <X className="h-4 w-4 mr-1" />
                                 拒绝

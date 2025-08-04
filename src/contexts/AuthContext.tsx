@@ -88,6 +88,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const fetchUnreadNotificationCount = async (userId: string) => {
     try {
+      console.log('正在获取未读通知数量，用户ID:', userId);
       const { count, error } = await supabase
         .from('notifications')
         .select('*', { count: 'exact', head: true })
@@ -99,6 +100,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
 
+      console.log('未读通知数量:', count);
       setUnreadNotificationCount(count || 0);
     } catch (error) {
       console.error('Error in fetchUnreadNotificationCount:', error);
@@ -124,6 +126,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             fetchProfile(session.user.id);
             fetchUnreadNotificationCount(session.user.id);
           }, 0);
+          
+          // 额外延迟再次获取通知数量，确保数据同步
+          setTimeout(() => {
+            fetchUnreadNotificationCount(session.user.id);
+          }, 2000);
         } else {
           setProfile(null);
           setUnreadNotificationCount(0);
@@ -143,6 +150,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           fetchProfile(session.user.id);
           fetchUnreadNotificationCount(session.user.id);
         }, 0);
+        
+        // 额外延迟再次获取通知数量，确保数据同步
+        setTimeout(() => {
+          fetchUnreadNotificationCount(session.user.id);
+        }, 2000);
       }
       
       setLoading(false);
@@ -165,9 +177,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           filter: `user_id=eq.${user.id}`
         }, 
         (payload) => {
-          console.log('收到新通知:', payload);
+          console.log('收到新通知事件:', payload);
           // 刷新通知计数
-          fetchUnreadNotificationCount(user.id);
+          setTimeout(() => {
+            fetchUnreadNotificationCount(user.id);
+          }, 500); // 延迟500ms确保数据已同步
         }
       )
       .on('postgres_changes',
@@ -178,9 +192,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           filter: `user_id=eq.${user.id}`
         },
         (payload) => {
-          console.log('通知状态更新:', payload);
+          console.log('通知状态更新事件:', payload);
           // 刷新通知计数
-          fetchUnreadNotificationCount(user.id);
+          setTimeout(() => {
+            fetchUnreadNotificationCount(user.id);
+          }, 500); // 延迟500ms确保数据已同步
         }
       )
       .subscribe();

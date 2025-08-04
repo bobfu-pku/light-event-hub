@@ -7,6 +7,8 @@ import { Badge } from '@/components/ui/badge';
 import { Star, User } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
+import { timeUtils } from '@/lib/utils';
+import { createEventReviewNotification } from '@/lib/notifications';
 
 interface Review {
   id: string;
@@ -128,6 +130,37 @@ const EventReviews: React.FC<EventReviewsProps> = ({ eventId, eventEndTime }) =>
 
       if (error) throw error;
 
+      // 获取活动信息和用户昵称，发送通知给主办方
+      try {
+        const [eventResponse, userProfileResponse] = await Promise.all([
+          supabase
+            .from('events')
+            .select('title')
+            .eq('id', eventId)
+            .single(),
+          supabase
+            .from('profiles')
+            .select('nickname')
+            .eq('user_id', user.id)
+            .single()
+        ]);
+
+        if (eventResponse.data && userProfileResponse.data) {
+          const eventTitle = eventResponse.data.title;
+          const reviewerName = userProfileResponse.data.nickname || '匿名用户';
+          
+          await createEventReviewNotification(
+            eventId,
+            eventTitle,
+            reviewerName,
+            rating
+          );
+        }
+      } catch (notificationError) {
+        console.error('发送主办方通知失败:', notificationError);
+        // 通知失败不影响评价提交成功
+      }
+
       toast({
         title: "评价成功",
         description: "感谢您的评价！"
@@ -169,12 +202,7 @@ const EventReviews: React.FC<EventReviewsProps> = ({ eventId, eventEndTime }) =>
   };
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleString('zh-CN', {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+    return timeUtils.formatBeijingTimeShort(dateString);
   };
 
   if (loading) {

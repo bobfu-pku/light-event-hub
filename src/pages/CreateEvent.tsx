@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,14 +9,20 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
+import { timeUtils } from '@/lib/utils';
+import { createEventUpdateNotification } from '@/lib/notifications';
 import { Mail, Phone, Settings } from 'lucide-react';
 
 const CreateEvent = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const [searchParams] = useSearchParams();
   const [loading, setLoading] = useState(false);
   const [userProfile, setUserProfile] = useState<any>(null);
+  const [editingEventId, setEditingEventId] = useState<string | null>(null);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [existingCoverImageUrl, setExistingCoverImageUrl] = useState<string | null>(null);
   
   const [formData, setFormData] = useState({
     title: '',
@@ -41,8 +47,16 @@ const CreateEvent = () => {
   useEffect(() => {
     if (user) {
       fetchUserProfile();
+      
+      // 检查是否为编辑模式
+      const eventId = searchParams.get('id');
+      if (eventId) {
+        setEditingEventId(eventId);
+        setIsEditMode(true);
+        loadEventForEdit(eventId);
+      }
     }
-  }, [user]);
+  }, [user, searchParams]);
 
   const fetchUserProfile = async () => {
     try {
@@ -58,6 +72,61 @@ const CreateEvent = () => {
       setUserProfile(data);
     } catch (error) {
       console.error('Error fetching user profile:', error);
+    }
+  };
+
+  const loadEventForEdit = async (eventId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('events')
+        .select('*')
+        .eq('id', eventId)
+        .eq('organizer_id', user?.id)
+        .single();
+
+      if (error) {
+        console.error('Error loading event:', error);
+        toast({
+          title: "错误",
+          description: "无法加载活动信息",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      if (data) {
+        // 填充表单数据
+        setFormData({
+          title: data.title || '',
+          description: data.description || '',
+          event_type: data.event_type || 'conference',
+          start_time: data.start_time ? timeUtils.beijingISOToLocal(data.start_time) : '',
+          end_time: data.end_time ? timeUtils.beijingISOToLocal(data.end_time) : '',
+          location_type: data.location === '线上活动' ? 'online' : 'offline',
+          online_link: data.location === '线上活动' ? (data.detailed_address || '') : '',
+          city: data.location === '线上活动' ? '' : (data.location || ''),
+          detailed_address: data.location === '线上活动' ? '' : (data.detailed_address || ''),
+          cover_image: null,
+          max_participants: data.max_participants ? data.max_participants.toString() : '',
+          registration_deadline: data.registration_deadline ? timeUtils.beijingISOToLocal(data.registration_deadline) : '',
+          requires_approval: data.requires_approval || false,
+          is_paid: data.is_paid || false,
+          price: data.price ? data.price.toString() : '',
+          price_description: data.price_description || ''
+        });
+
+        // 保存现有的封面图片URL
+        if (data.cover_image_url) {
+          setExistingCoverImageUrl(data.cover_image_url);
+        }
+      }
+    } catch (error) {
+      console.error('Error loading draft event:', error);
+      toast({
+        title: "错误",
+        description: "加载草稿失败",
+        variant: "destructive"
+      });
     }
   };
 
@@ -92,13 +161,17 @@ const CreateEvent = () => {
     try {
       const fileExt = file.name.split('.').pop();
       const fileName = `${Date.now()}.${fileExt}`;
-      const filePath = `event-covers/${fileName}`;
+      // 使用用户ID作为文件夹名，符合存储策略要求
+      const filePath = `${user?.id}/event-covers/${fileName}`;
 
       const { error: uploadError } = await supabase.storage
         .from('avatars')
         .upload(filePath, file);
 
-      if (uploadError) throw uploadError;
+      if (uploadError) {
+        console.error('Upload error:', uploadError);
+        throw uploadError;
+      }
 
       const { data } = supabase.storage
         .from('avatars')
@@ -143,10 +216,10 @@ const CreateEvent = () => {
       return;
     }
 
-    if (!userProfile.organizer_name || !userProfile.organizer_description || !userProfile.contact_email || !userProfile.contact_phone) {
+    if (!userProfile.organizer_name || !userProfile.contact_email) {
       toast({
         title: "错误",
-        description: "请先完善主办方信息（组织名称、组织介绍、联系邮箱、联系电话）",
+        description: "请先完善主办方信息（组织名称、联系邮箱）",
         variant: "destructive"
       });
       return;
@@ -192,17 +265,29 @@ const CreateEvent = () => {
 
     try {
       // Upload cover image if provided
-      let coverImageUrl = null;
+      let coverImageUrl = existingCoverImageUrl; // 保留现有图片URL
       if (formData.cover_image) {
-        coverImageUrl = await uploadCoverImage(formData.cover_image);
-        if (!coverImageUrl) {
-          toast({
-            title: "错误",
-            description: "封面图片上传失败",
-            variant: "destructive"
-          });
-          setLoading(false);
-          return;
+        const newImageUrl = await uploadCoverImage(formData.cover_image);
+        if (newImageUrl) {
+          coverImageUrl = newImageUrl;
+        } else {
+          if (saveAsDraft) {
+            // 草稿模式：图片上传失败时给出提示但继续保存
+            toast({
+              title: "提示",
+              description: "封面图片上传失败，已保存草稿但保留原有封面图片",
+              variant: "default"
+            });
+          } else {
+            // 发布模式：图片上传失败时阻止发布
+            toast({
+              title: "错误",
+              description: "封面图片上传失败",
+              variant: "destructive"
+            });
+            setLoading(false);
+            return;
+          }
         }
       }
 
@@ -222,13 +307,13 @@ const CreateEvent = () => {
         title: formData.title.trim(),
         description: formData.description.trim(),
         event_type: formData.event_type as 'conference' | 'training' | 'social' | 'sports' | 'performance' | 'workshop' | 'meetup' | 'other',
-        start_time: formData.start_time,
-        end_time: formData.end_time,
+        start_time: timeUtils.localToBeijingISO(formData.start_time),
+        end_time: timeUtils.localToBeijingISO(formData.end_time),
         location: location,
         detailed_address: detailed_address,
         cover_image_url: coverImageUrl,
         max_participants: formData.max_participants ? parseInt(formData.max_participants) : null,
-        registration_deadline: formData.registration_deadline || null,
+        registration_deadline: formData.registration_deadline ? timeUtils.localToBeijingISO(formData.registration_deadline) : null,
         requires_approval: formData.requires_approval,
         is_paid: false, // Always false since payment is under development
         price: null,
@@ -239,17 +324,53 @@ const CreateEvent = () => {
         status: (saveAsDraft ? 'draft' : 'published') as 'draft' | 'published'
       };
 
-      const { data, error } = await supabase
-        .from('events')
-        .insert([eventData])
-        .select()
-        .single();
+      let data, error;
+      
+      if (isEditMode && editingEventId) {
+        // 编辑模式：更新现有活动
+        const { data: updateData, error: updateError } = await supabase
+          .from('events')
+          .update(eventData)
+          .eq('id', editingEventId)
+          .select()
+          .single();
+        
+        data = updateData;
+        error = updateError;
+      } else {
+        // 创建模式：插入新活动
+        const { data: insertData, error: insertError } = await supabase
+          .from('events')
+          .insert([eventData])
+          .select()
+          .single();
+        
+        data = insertData;
+        error = insertError;
+      }
 
       if (error) throw error;
 
+      // 如果是编辑模式且已发布（不是草稿），发送更新通知给所有报名者
+      if (isEditMode && editingEventId && !saveAsDraft) {
+        try {
+          const notificationCount = await createEventUpdateNotification(
+            editingEventId,
+            eventData.title,
+            '主办方更新了活动信息，请查看最新详情'
+          );
+          console.log(`已向 ${notificationCount} 位报名者发送活动更新通知`);
+        } catch (notificationError) {
+          console.error('发送更新通知失败:', notificationError);
+          // 不中断主流程，仅记录错误
+        }
+      }
+
       toast({
         title: "成功",
-        description: saveAsDraft ? "活动已保存为草稿" : "活动已发布"
+        description: isEditMode 
+          ? (saveAsDraft ? "草稿已更新" : "活动已更新，已通知所有报名者") 
+          : (saveAsDraft ? "活动已保存为草稿" : "活动已发布")
       });
 
       navigate(`/events/${data.id}`);
@@ -280,8 +401,12 @@ const CreateEvent = () => {
   return (
     <div className="container mx-auto px-4 py-8 max-w-4xl">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold gradient-text">创建活动</h1>
-        <p className="text-muted-foreground mt-2">填写活动信息并发布给所有用户</p>
+        <h1 className="text-3xl font-bold gradient-text">
+          {isEditMode ? '编辑活动' : '创建活动'}
+        </h1>
+        <p className="text-muted-foreground mt-2">
+          {isEditMode ? '修改活动信息并重新发布' : '填写活动信息并发布给所有用户'}
+        </p>
       </div>
 
       <form onSubmit={(e) => handleSubmit(e, false)} className="space-y-8">
@@ -325,10 +450,12 @@ const CreateEvent = () => {
                   className="w-full md:w-80 aspect-video border-2 border-dashed border-border rounded-lg flex items-center justify-center bg-muted/50 relative overflow-hidden cursor-pointer"
                   onClick={() => document.getElementById('cover_image')?.click()}
                 >
-                  {formData.cover_image ? (
+                  {formData.cover_image || existingCoverImageUrl ? (
                     <>
                       <img
-                        src={URL.createObjectURL(formData.cover_image)}
+                        src={formData.cover_image 
+                          ? URL.createObjectURL(formData.cover_image)
+                          : existingCoverImageUrl || ''}
                         alt="封面预览"
                         className="w-full h-full object-cover"
                       />
@@ -351,6 +478,7 @@ const CreateEvent = () => {
                           onClick={(e) => {
                             e.stopPropagation();
                             setFormData(prev => ({ ...prev, cover_image: null }));
+                            setExistingCoverImageUrl(null);
                           }}
                         >
                           删除
@@ -633,24 +761,50 @@ const CreateEvent = () => {
         </Card>
 
         {/* Action Buttons */}
-        <div className="flex flex-col sm:flex-row gap-4">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={(e) => handleSubmit(e, true)}
-            disabled={loading}
-            className="flex-1"
-          >
-            {loading ? "保存中..." : "保存为草稿"}
-          </Button>
-          <Button
-            type="submit"
-            disabled={loading}
-            className="flex-1 bg-gradient-primary hover:opacity-90"
-          >
-            {loading ? "发布中..." : "立即发布"}
-          </Button>
-        </div>
+        {isEditMode ? (
+          <div className="space-y-4">
+            <div className="text-center text-sm text-muted-foreground bg-blue-50 p-3 rounded-lg border">
+              💡 活动更新会通知所有报名者
+            </div>
+            <div className="flex flex-col sm:flex-row gap-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => navigate(`/events/${editingEventId}/manage`)}
+                disabled={loading}
+                className="flex-1"
+              >
+                取消编辑
+              </Button>
+              <Button
+                type="submit"
+                disabled={loading}
+                className="flex-1 bg-gradient-primary hover:opacity-90"
+              >
+                {loading ? "更新中..." : "更新活动"}
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-col sm:flex-row gap-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={(e) => handleSubmit(e, true)}
+              disabled={loading}
+              className="flex-1"
+            >
+              {loading ? "保存中..." : "保存为草稿"}
+            </Button>
+            <Button
+              type="submit"
+              disabled={loading}
+              className="flex-1 bg-gradient-primary hover:opacity-90"
+            >
+              {loading ? "发布中..." : "立即发布"}
+            </Button>
+          </div>
+        )}
       </form>
     </div>
   );

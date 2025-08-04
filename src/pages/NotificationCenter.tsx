@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import { Bell, CheckCircle, Clock, Calendar, UserPlus, MessageCircle, Shield } from 'lucide-react';
+import { Bell, CheckCircle, Clock, Calendar, UserPlus, MessageCircle, Shield, Star } from 'lucide-react';
 import { Tables } from '@/integrations/supabase/types';
 
 type Notification = Tables<'notifications'>;
@@ -13,6 +14,7 @@ type Notification = Tables<'notifications'>;
 const NotificationCenter = () => {
   const { user, refreshNotifications } = useAuth();
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -106,9 +108,16 @@ const NotificationCenter = () => {
       case 'event_registration':
         return <UserPlus className="h-4 w-4" />;
       case 'organizer_application':
+      case 'organizer_approved':
+      case 'organizer_rejected':
         return <Shield className="h-4 w-4" />;
       case 'discussion_reply':
         return <MessageCircle className="h-4 w-4" />;
+      case 'event_review':
+        return <Star className="h-4 w-4" />;
+      case 'event_updated':
+      case 'event_cancelled':
+        return <Bell className="h-4 w-4" />;
       default:
         return <Bell className="h-4 w-4" />;
     }
@@ -117,8 +126,10 @@ const NotificationCenter = () => {
   const getNotificationColor = (type: string) => {
     switch (type) {
       case 'registration_approved':
+      case 'organizer_approved':
         return 'bg-green-500';
       case 'registration_rejected':
+      case 'organizer_rejected':
         return 'bg-red-500';
       case 'event_reminder':
         return 'bg-blue-500';
@@ -128,6 +139,12 @@ const NotificationCenter = () => {
         return 'bg-purple-500';
       case 'discussion_reply':
         return 'bg-cyan-500';
+      case 'event_review':
+        return 'bg-yellow-500';
+      case 'event_updated':
+        return 'bg-blue-500';
+      case 'event_cancelled':
+        return 'bg-red-500';
       default:
         return 'bg-gray-500';
     }
@@ -220,6 +237,23 @@ const NotificationCenter = () => {
                 onClick={() => {
                   if (!notification.is_read) {
                     markAsRead(notification.id);
+                  }
+                  
+                  // 处理跳转逻辑
+                  if (notification.type === 'organizer_approved' || notification.type === 'organizer_rejected') {
+                    navigate('/become-organizer');
+                  } else if (notification.type === 'organizer_application') {
+                    navigate('/admin?tab=applications');
+                  } else if (notification.type === 'event_registration' && notification.related_event_id) {
+                    navigate(`/events/${notification.related_event_id}/manage`);
+                  } else if (notification.type === 'discussion_reply' && notification.related_event_id) {
+                    navigate(`/events/${notification.related_event_id}?tab=discussion`);
+                  } else if (notification.type === 'event_review' && notification.related_event_id) {
+                    navigate(`/events/${notification.related_event_id}?tab=reviews`);
+                  } else if ((notification.type === 'registration_approved' || notification.type === 'registration_rejected') && notification.related_event_id) {
+                    navigate(`/events/${notification.related_event_id}`);
+                  } else if ((notification.type === 'event_updated' || notification.type === 'event_cancelled') && notification.related_event_id) {
+                    navigate(`/events/${notification.related_event_id}`);
                   }
                 }}
               >

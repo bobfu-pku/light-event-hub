@@ -13,9 +13,13 @@ const Header = () => {
     signOut,
     isOrganizer,
     isAdmin,
-    unreadNotificationCount
+    unreadNotificationCount,
+    refreshNotifications
   } = useAuth();
   const navigate = useNavigate();
+  
+  // 添加调试信息
+  console.log('Header - 当前未读通知数量:', unreadNotificationCount);
   const handleSignOut = async () => {
     await signOut();
   };
@@ -39,8 +43,24 @@ const Header = () => {
               
 
               {/* Notifications */}
-              <Button variant="ghost" size="icon" className="hidden sm:flex">
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="hidden sm:flex relative"
+                onClick={async () => {
+                  console.log('点击刷新通知');
+                  await refreshNotifications();
+                  navigate('/notifications');
+                }}
+              >
                 <Bell className="h-4 w-4" />
+                {unreadNotificationCount > 0 && (
+                  <div className="absolute -top-1 -right-1 h-4 w-4 bg-red-500 rounded-full flex items-center justify-center">
+                    <span className="text-xs text-white font-medium">
+                      {unreadNotificationCount > 9 ? '9+' : unreadNotificationCount}
+                    </span>
+                  </div>
+                )}
               </Button>
 
 
@@ -107,14 +127,22 @@ const Header = () => {
                     <span>我的活动</span>
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => navigate('/notifications')}>
+                  <DropdownMenuItem onClick={async () => {
+                    console.log('点击通知中心，当前通知数量:', unreadNotificationCount);
+                    await refreshNotifications();
+                    navigate('/notifications');
+                  }}>
                     <div className="flex items-center justify-between w-full">
                       <div className="flex items-center">
                         <Bell className="mr-2 h-4 w-4" />
                         <span>通知中心</span>
                       </div>
                       {unreadNotificationCount > 0 && (
-                        <div className="h-2 w-2 bg-red-500 rounded-full"></div>
+                        <div className="h-4 w-4 bg-red-500 rounded-full flex items-center justify-center">
+                          <span className="text-xs text-white font-medium">
+                            {unreadNotificationCount > 9 ? '9+' : unreadNotificationCount}
+                          </span>
+                        </div>
                       )}
                     </div>
                   </DropdownMenuItem>

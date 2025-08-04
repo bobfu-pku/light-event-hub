@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Calendar, MapPin, Users, Settings, Eye, Filter } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { timeUtils } from '@/lib/utils';
 
 interface Event {
   id: string;
@@ -15,6 +16,7 @@ interface Event {
   description: string;
   event_type: string;
   start_time: string;
+  end_time: string;
   location: string;
   status: string;
   max_participants?: number;
@@ -36,6 +38,7 @@ interface Registration {
   events: {
     title: string;
     start_time: string;
+    end_time: string;
     location: string;
     cover_image_url?: string;
   };
@@ -85,6 +88,7 @@ const MyEvents = () => {
           events (
             title,
             start_time,
+            end_time,
             location,
             cover_image_url
           )
@@ -140,20 +144,13 @@ const MyEvents = () => {
   };
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('zh-CN', {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+    return timeUtils.formatBeijingTimeShort(dateString);
   };
 
   // 获取活动的实际状态（基于时间判断）
   const getActualEventStatus = (event: Event) => {
     const now = new Date();
-    const startTime = new Date(event.start_time);
-    const endTime = new Date(event.start_time);
-    endTime.setHours(endTime.getHours() + 2); // 假设活动持续2小时
+    const endTime = new Date(event.end_time);
 
     if (event.status === 'draft') return 'draft';
     if (endTime < now) return 'ended';
@@ -220,9 +217,7 @@ const MyEvents = () => {
   // 获取报名活动的实际状态（基于时间和报名状态判断）
   const getActualRegistrationStatus = (registration: Registration) => {
     const now = new Date();
-    const startTime = new Date(registration.events.start_time);
-    const endTime = new Date(registration.events.start_time);
-    endTime.setHours(endTime.getHours() + 2); // 假设活动持续2小时
+    const endTime = new Date(registration.events.end_time);
 
     // 如果活动已结束，状态为已结束
     if (endTime < now) return 'ended';
@@ -451,12 +446,21 @@ const MyEvents = () => {
                           查看
                         </Button>
                       </Link>
-                      <Link to={`/events/${event.id}/manage`} className="flex-1">
-                        <Button size="sm" className="w-full">
-                          <Settings className="h-4 w-4 mr-2" />
-                          管理
-                        </Button>
-                      </Link>
+                      {getActualEventStatus(event) === 'draft' ? (
+                        <Link to={`/events/create?id=${event.id}`} className="flex-1">
+                          <Button size="sm" className="w-full">
+                            <Settings className="h-4 w-4 mr-2" />
+                            编辑发布
+                          </Button>
+                        </Link>
+                      ) : (
+                        <Link to={`/events/${event.id}/manage`} className="flex-1">
+                          <Button size="sm" className="w-full">
+                            <Settings className="h-4 w-4 mr-2" />
+                            管理
+                          </Button>
+                        </Link>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -500,73 +504,69 @@ const MyEvents = () => {
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {filteredRegistrations.map((registration) => (
-                <Card key={registration.id} className="group hover:shadow-lg transition-all duration-300">
-                  {registration.events.cover_image_url ? (
-                    <img
-                      src={registration.events.cover_image_url}
-                      alt={registration.events.title}
-                      className="w-full h-48 object-cover rounded-t-lg"
-                    />
-                  ) : (
-                    <div className="w-full h-48 bg-gradient-subtle rounded-t-lg flex items-center justify-center">
-                      <Calendar className="h-12 w-12 text-muted-foreground" />
-                    </div>
-                  )}
-                  
-                  <CardContent className="p-4">
-                    <div className="flex items-start justify-between mb-2">
-                      <Badge 
-                        variant={getStatusColor(getActualRegistrationStatus(registration)) as any}
-                        className="text-xs"
-                      >
-                        {getStatusLabel(getActualRegistrationStatus(registration))}
-                      </Badge>
-                      {registration.payment_amount && registration.payment_amount > 0 ? (
-                        <Badge variant="outline" className="text-xs">
-                          ¥{registration.payment_amount}
-                        </Badge>
-                      ) : (
-                        <Badge variant="secondary" className="text-xs bg-green-100 text-green-800 border-green-200">
-                          免费
-                        </Badge>
-                      )}
-                    </div>
-                    
-                    <h3 className="font-semibold text-lg mb-2 line-clamp-2">
-                      {registration.events.title}
-                    </h3>
-                    
-                    <div className="space-y-2 text-sm text-muted-foreground mb-4">
-                      <div className="flex items-center gap-2">
-                        <Calendar className="h-4 w-4" />
-                        <span>{formatDate(registration.events.start_time)}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <MapPin className="h-4 w-4" />
-                        <span className="line-clamp-1">{registration.events.location}</span>
-                      </div>
-                    </div>
-                    
-                    <div className="text-xs text-muted-foreground mb-4">
-                      报名时间: {formatDate(registration.created_at)}
-                    </div>
-                    
-                    {registration.verification_code && registration.status === 'paid' && (
-                      <div className="p-2 mb-4 bg-green-50 border border-green-200 rounded text-center">
-                        <p className="text-xs font-medium text-green-800">核验码</p>
-                        <p className="text-sm font-mono font-bold text-green-900">
-                          {registration.verification_code}
-                        </p>
+                <Link key={registration.id} to={`/events/${registration.event_id}`}>
+                  <Card className="group hover:shadow-lg transition-all duration-300 cursor-pointer">
+                    {registration.events.cover_image_url ? (
+                      <img
+                        src={registration.events.cover_image_url}
+                        alt={registration.events.title}
+                        className="w-full h-48 object-cover rounded-t-lg"
+                      />
+                    ) : (
+                      <div className="w-full h-48 bg-gradient-subtle rounded-t-lg flex items-center justify-center">
+                        <Calendar className="h-12 w-12 text-muted-foreground" />
                       </div>
                     )}
                     
-                    <Button variant="outline" size="sm" className="w-full" asChild>
-                      <Link to={`/events/${registration.event_id}`}>
-                        查看活动详情
-                      </Link>
-                    </Button>
-                  </CardContent>
-                </Card>
+                    <CardContent className="p-4">
+                      <div className="flex items-start justify-between mb-2">
+                        <Badge 
+                          variant={getStatusColor(getActualRegistrationStatus(registration)) as any}
+                          className="text-xs"
+                        >
+                          {getStatusLabel(getActualRegistrationStatus(registration))}
+                        </Badge>
+                        {registration.payment_amount && registration.payment_amount > 0 ? (
+                          <Badge variant="outline" className="text-xs">
+                            ¥{registration.payment_amount}
+                          </Badge>
+                        ) : (
+                          <Badge variant="secondary" className="text-xs bg-green-100 text-green-800 border-green-200">
+                            免费
+                          </Badge>
+                        )}
+                      </div>
+                      
+                      <h3 className="font-semibold text-lg mb-2 line-clamp-2">
+                        {registration.events.title}
+                      </h3>
+                      
+                      <div className="space-y-2 text-sm text-muted-foreground mb-4">
+                        <div className="flex items-center gap-2">
+                          <Calendar className="h-4 w-4" />
+                          <span>{formatDate(registration.events.start_time)}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <MapPin className="h-4 w-4" />
+                          <span className="line-clamp-1">{registration.events.location}</span>
+                        </div>
+                      </div>
+                      
+                      <div className="text-xs text-muted-foreground mb-4">
+                        报名时间: {formatDate(registration.created_at)}
+                      </div>
+                      
+                      {registration.verification_code && registration.status === 'paid' && (
+                        <div className="p-2 mb-4 bg-green-50 border border-green-200 rounded text-center">
+                          <p className="text-xs font-medium text-green-800">核验码</p>
+                          <p className="text-sm font-mono font-bold text-green-900">
+                            {registration.verification_code}
+                          </p>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </Link>
                 ))}
               </div>
             </>

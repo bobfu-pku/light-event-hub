@@ -1,73 +1,145 @@
-# Welcome to your Lovable project
+# Light Event Hub 🎉
 
-## Project info
+一个现代化的全栈事件管理平台，让活动组织者和参与者能够轻松创建、管理和参与各种活动。
 
-**URL**: https://lovable.dev/projects/dc95ae5b-5e1f-4957-8188-5e317397c59c
+## ✨ 主要功能
 
-## How can I edit this code?
+### 👥 用户管理
+- 用户注册、登录和个人资料管理
+- 角色系统（普通用户、组织者、管理员）
+- 申请成为活动组织者功能
 
-There are several ways of editing your application.
+### 🎯 事件管理
+- 创建和发布活动
+- 活动详情展示（时间、地点、价格等）
+- 活动状态管理（草稿、已发布、已结束）
+- 活动封面图片上传
+- 活动标签分类
 
-**Use Lovable**
+### 📝 报名系统
+- 在线活动报名
+- 报名信息管理
+- 支付状态跟踪
+- 二维码签到功能
+- 参与者管理
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/dc95ae5b-5e1f-4957-8188-5e317397c59c) and start prompting.
+### 💬 互动功能
+- 活动讨论区
+- 讨论回复和置顶
+- 活动评价系统
+- 实时通知系统
 
-Changes made via Lovable will be committed automatically to this repo.
+### 📱 移动端支持
+- 响应式设计，适配各种设备
+- 通过 Capacitor 支持 iOS/Android 原生功能
+- 二维码扫描功能
 
-**Use your preferred IDE**
+## 🛠️ 技术栈
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+- **前端框架**: React 18 + TypeScript
+- **构建工具**: Vite
+- **UI组件库**: shadcn-ui + Tailwind CSS
+- **后端服务**: Supabase (PostgreSQL + Auth + Storage)
+- **状态管理**: React Query + Context API
+- **表单处理**: React Hook Form + Zod 验证
+- **路由管理**: React Router v6
+- **移动端**: Capacitor
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+## 🚀 快速开始
 
-Follow these steps:
+### 环境要求
+- Node.js 16+ 
+- npm 或 yarn 或 bun
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
+### 本地开发
+
+```bash
+# 1. 克隆项目
 git clone <YOUR_GIT_URL>
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+# 2. 进入项目目录
+cd light-event-hub
 
-# Step 3: Install the necessary dependencies.
-npm i
+# 3. 安装依赖
+npm install
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
+# 4. 启动开发服务器
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+### 可用脚本
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+```bash
+# 开发模式
+npm run dev
 
-**Use GitHub Codespaces**
+# 生产构建
+npm run build
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+# 开发模式构建
+npm run build:dev
 
-## What technologies are used for this project?
+# 代码检查
+npm run lint
 
-This project is built with:
+# 预览构建结果
+npm run preview
+```
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+### 环境配置
 
-## How can I deploy this project?
+1. 复制 `.env.example` 到 `.env.local`
+2. 配置 Supabase 相关环境变量
+3. 启动开发服务器
 
-Simply open [Lovable](https://lovable.dev/projects/dc95ae5b-5e1f-4957-8188-5e317397c59c) and click on Share -> Publish.
+## 📁 项目结构
 
-## Can I connect a custom domain to my Lovable project?
+```
+light-event-hub/
+├── src/
+│   ├── components/          # React 组件
+│   ├── pages/              # 页面组件
+│   ├── contexts/           # React Context
+│   ├── hooks/              # 自定义 Hooks
+│   ├── lib/                # 工具库
+│   ├── integrations/       # 第三方集成
+│   └── assets/             # 静态资源
+├── supabase/               # Supabase 配置和迁移
+├── public/                 # 公共静态文件
+└── ...
+```
 
-Yes, you can!
+## 🔑 核心功能模块
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+### 🏠 首页 (`/`)
+- 平台介绍和功能展示
+- 最新活动推荐
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/tips-tricks/custom-domain#step-by-step-guide)
+### 📅 活动相关
+- `/events` - 活动列表
+- `/events/:id` - 活动详情
+- `/events/create` - 创建活动
+- `/events/:id/manage` - 管理活动
+- `/my-events` - 我的活动
+
+### 👤 用户相关
+- `/auth` - 登录注册
+- `/profile` - 个人资料
+- `/become-organizer` - 申请成为组织者
+- `/notifications` - 通知中心
+
+### 🛡️ 管理功能
+- `/admin` - 管理员面板
+
+## 📋 TODO
+
+- [ ] 讨论区优化
+  - 改进讨论展示样式，二级回复显示 “回复 xx：”
+  - 讨论删除功能
+- [ ] 扫描二维码功能开发
+
+## 📄 更多文档
+
+- [项目详细文档](PROJECT_INFO.md)
+- [服务条款](/terms)
+- [隐私政策](/privacy)

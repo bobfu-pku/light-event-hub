@@ -1,0 +1,10 @@
+name = "lightevent-bomingfu"
+compatibility_date = "2024-01-01"
+
+[env.production]
+routes = [
+  { pattern = "lightevent.bomingfu.com/*", custom_domain = true }
+]
+
+[[env.production.env.vars]]
+NODE_ENV = "production"

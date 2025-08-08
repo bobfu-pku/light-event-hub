@@ -23,6 +23,7 @@ const CreateEvent = () => {
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
   const [isEditMode, setIsEditMode] = useState(false);
   const [existingCoverImageUrl, setExistingCoverImageUrl] = useState<string | null>(null);
+  const [originalStatus, setOriginalStatus] = useState<string | null>(null);
   
   const [formData, setFormData] = useState({
     title: '',
@@ -119,6 +120,11 @@ const CreateEvent = () => {
         if (data.cover_image_url) {
           setExistingCoverImageUrl(data.cover_image_url);
         }
+
+        // 记录原始状态用于区分草稿发布与已发布更新
+        if (data.status) {
+          setOriginalStatus(data.status);
+        }
       }
     } catch (error) {
       console.error('Error loading draft event:', error);
@@ -197,68 +203,82 @@ const CreateEvent = () => {
     }
 
     // Validation
-    if (!formData.title.trim() || !formData.description.trim()) {
-      toast({
-        title: "错误",
-        description: "请填写所有必填字段",
-        variant: "destructive"
-      });
-      return;
-    }
+    if (saveAsDraft) {
+      // 草稿：仅做最小校验（至少需要标题）
+      if (!formData.title.trim()) {
+        toast({
+          title: "错误",
+          description: "请至少填写活动标题以保存草稿",
+          variant: "destructive"
+        });
+        return;
+      }
+      // 其余字段允许为空
+    } else {
+      // 发布：严格校验
+      if (!formData.title.trim() || !formData.description.trim()) {
+        toast({
+          title: "错误",
+          description: "请填写所有必填字段",
+          variant: "destructive"
+        });
+        return;
+      }
 
-    // Check if user is organizer and has complete contact info
-    if (!userProfile || !userProfile.roles?.includes('organizer')) {
-      toast({
-        title: "错误",
-        description: "只有主办方才能创建活动",
-        variant: "destructive"
-      });
-      return;
-    }
+      // Check if user is organizer and has complete contact info
+      if (!userProfile || !userProfile.roles?.includes('organizer')) {
+        toast({
+          title: "错误",
+          description: "只有主办方才能创建活动",
+          variant: "destructive"
+        });
+        return;
+      }
 
-    if (!userProfile.organizer_name || !userProfile.contact_email) {
-      toast({
-        title: "错误",
-        description: "请先完善主办方信息（组织名称、联系邮箱）",
-        variant: "destructive"
-      });
-      return;
-    }
+      if (!userProfile.organizer_name || !userProfile.contact_email) {
+        toast({
+          title: "错误",
+          description: "请先完善主办方信息（组织名称、联系邮箱）",
+          variant: "destructive"
+        });
+        return;
+      }
 
-    if (formData.location_type === 'online' && !formData.online_link.trim()) {
-      toast({
-        title: "错误",
-        description: "请填写线上活动链接",
-        variant: "destructive"
-      });
-      return;
-    }
+      if (formData.location_type === 'online' && !formData.online_link.trim()) {
+        toast({
+          title: "错误",
+          description: "请填写线上活动链接",
+          variant: "destructive"
+        });
+        return;
+      }
 
-    if (formData.location_type === 'offline' && (!formData.city || !formData.detailed_address.trim())) {
-      toast({
-        title: "错误",
-        description: "请选择城市并填写详细地址",
-        variant: "destructive"
-      });
-      return;
-    }
+      if (formData.location_type === 'offline' && (!formData.city || !formData.detailed_address.trim())) {
+        toast({
+          title: "错误",
+          description: "请选择城市并填写详细地址",
+          variant: "destructive"
+        });
+        return;
+      }
 
-    if (!formData.start_time || !formData.end_time) {
-      toast({
-        title: "错误",
-        description: "请设置活动开始和结束时间",
-        variant: "destructive"
-      });
-      return;
-    }
+      if (!formData.start_time || !formData.end_time) {
+        toast({
+          title: "错误",
+          description: "请设置活动开始和结束时间",
+          variant: "destructive"
+        });
+        return;
+      }
 
-    if (new Date(formData.start_time) >= new Date(formData.end_time)) {
-      toast({
-        title: "错误",
-        description: "结束时间必须晚于开始时间",
-        variant: "destructive"
-      });
-      return;
+      if (new Date(formData.start_time) >= new Date(formData.end_time)) {
+        toast({
+          title: "错误",
+          description: "结束时间必须晚于开始时间",
+          variant: "destructive"
+        });
+        return;
+      }
     }
 
     setLoading(true);
@@ -291,24 +311,33 @@ const CreateEvent = () => {
         }
       }
 
-      // Build location string based on type
-      let location = '';
-      let detailed_address = null;
-      
+      // Build location string based on type（草稿提供占位值满足非空约束）
+      let location: string;
+      let detailed_address: string | null = null;
       if (formData.location_type === 'online') {
         location = '线上活动';
-        detailed_address = formData.online_link.trim();
+        detailed_address = formData.online_link?.trim() || null;
       } else {
-        location = formData.city;
-        detailed_address = formData.detailed_address.trim();
+        location = formData.city || (saveAsDraft ? '待定' : '');
+        detailed_address = formData.detailed_address?.trim() || null;
       }
+
+      // 占位时间，满足 NOT NULL 约束（仅用于草稿缺失时）
+      const nowISO = new Date().toISOString();
+      const oneHourLaterISO = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+      const startTimeISO = formData.start_time
+        ? timeUtils.localToBeijingISO(formData.start_time)
+        : (saveAsDraft ? nowISO : '');
+      const endTimeISO = formData.end_time
+        ? timeUtils.localToBeijingISO(formData.end_time)
+        : (saveAsDraft ? oneHourLaterISO : '');
 
       const eventData = {
         title: formData.title.trim(),
-        description: formData.description.trim(),
+        description: (formData.description || '').trim(),
         event_type: formData.event_type as 'conference' | 'training' | 'social' | 'sports' | 'performance' | 'workshop' | 'meetup' | 'other',
-        start_time: timeUtils.localToBeijingISO(formData.start_time),
-        end_time: timeUtils.localToBeijingISO(formData.end_time),
+        start_time: startTimeISO,
+        end_time: endTimeISO,
         location: location,
         detailed_address: detailed_address,
         cover_image_url: coverImageUrl,
@@ -351,8 +380,30 @@ const CreateEvent = () => {
 
       if (error) throw error;
 
+      // Ensure leader membership exists in event_organizers when creating a new event
+      if (!isEditMode && data?.id) {
+        try {
+          await supabase
+            .from('event_organizers')
+            .upsert(
+              [
+                {
+                  event_id: data.id,
+                  user_id: user.id,
+                  role: 'leader' as any,
+                  added_by: user.id,
+                },
+              ],
+              { onConflict: 'event_id,user_id' }
+            );
+        } catch (e) {
+          console.warn('Failed to create leader in event_organizers:', e);
+        }
+      }
+
       // 如果是编辑模式且已发布（不是草稿），发送更新通知给所有报名者
-      if (isEditMode && editingEventId && !saveAsDraft) {
+      const isPublishingDraft = isEditMode && originalStatus === 'draft' && !saveAsDraft;
+      if (isEditMode && editingEventId && !saveAsDraft && !isPublishingDraft) {
         try {
           const notificationCount = await createEventUpdateNotification(
             editingEventId,
@@ -366,11 +417,15 @@ const CreateEvent = () => {
         }
       }
 
+      const successDescription = isEditMode
+        ? (saveAsDraft
+            ? '草稿已更新'
+            : (originalStatus === 'draft' ? '活动已发布' : '活动已更新，已通知所有报名者'))
+        : (saveAsDraft ? '活动已保存为草稿' : '活动已发布');
+
       toast({
-        title: "成功",
-        description: isEditMode 
-          ? (saveAsDraft ? "草稿已更新" : "活动已更新，已通知所有报名者") 
-          : (saveAsDraft ? "活动已保存为草稿" : "活动已发布")
+        title: '成功',
+        description: successDescription,
       });
 
       navigate(`/events/${data.id}`);
@@ -763,9 +818,11 @@ const CreateEvent = () => {
         {/* Action Buttons */}
         {isEditMode ? (
           <div className="space-y-4">
-            <div className="text-center text-sm text-muted-foreground bg-blue-50 p-3 rounded-lg border">
-              💡 活动更新会通知所有报名者
-            </div>
+            {originalStatus && originalStatus !== 'draft' && (
+              <div className="text-center text-sm text-muted-foreground bg-blue-50 p-3 rounded-lg border">
+                💡 活动更新会通知所有报名者
+              </div>
+            )}
             <div className="flex flex-col sm:flex-row gap-4">
               <Button
                 type="button"
@@ -781,7 +838,7 @@ const CreateEvent = () => {
                 disabled={loading}
                 className="flex-1 bg-gradient-primary hover:opacity-90"
               >
-                {loading ? "更新中..." : "更新活动"}
+                {loading ? (originalStatus === 'draft' ? '发布中...' : '更新中...') : (originalStatus === 'draft' ? '发布活动' : '更新活动')}
               </Button>
             </div>
           </div>

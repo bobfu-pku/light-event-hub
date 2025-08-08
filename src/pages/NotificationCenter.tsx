@@ -110,6 +110,8 @@ const NotificationCenter = () => {
       case 'organizer_application':
       case 'organizer_approved':
       case 'organizer_rejected':
+      case 'organizer_member_added':
+      case 'organizer_member_removed':
         return <Shield className="h-4 w-4" />;
       case 'discussion_reply':
         return <MessageCircle className="h-4 w-4" />;
@@ -130,12 +132,14 @@ const NotificationCenter = () => {
         return 'bg-green-500';
       case 'registration_rejected':
       case 'organizer_rejected':
+      case 'organizer_member_removed':
         return 'bg-red-500';
       case 'event_reminder':
         return 'bg-blue-500';
       case 'event_registration':
         return 'bg-orange-500';
       case 'organizer_application':
+      case 'organizer_member_added':
         return 'bg-purple-500';
       case 'discussion_reply':
         return 'bg-cyan-500';
@@ -244,6 +248,8 @@ const NotificationCenter = () => {
                     navigate('/become-organizer');
                   } else if (notification.type === 'organizer_application') {
                     navigate('/admin?tab=applications');
+                  } else if ((notification.type === 'organizer_member_added' || notification.type === 'organizer_member_removed') && notification.related_event_id) {
+                    navigate(`/events/${notification.related_event_id}/manage?tab=organizers`);
                   } else if (notification.type === 'event_registration' && notification.related_event_id) {
                     navigate(`/events/${notification.related_event_id}/manage`);
                   } else if (notification.type === 'discussion_reply' && notification.related_event_id) {

@@ -14,6 +14,149 @@ export type Database = {
   }
   public: {
     Tables: {
+      event_organizers: {
+        Row: {
+          event_id: string
+          user_id: string
+          role: Database["public"]["Enums"]["organizer_role"]
+          added_by: string | null
+          created_at: string
+        }
+        Insert: {
+          event_id: string
+          user_id: string
+          role: Database["public"]["Enums"]["organizer_role"]
+          added_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          event_id?: string
+          user_id?: string
+          role?: Database["public"]["Enums"]["organizer_role"]
+          added_by?: string | null
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "event_organizers_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "event_organizers_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
+      organizer_point_allocations: {
+        Row: {
+          id: string
+          event_id: string
+          recipient_user_id: string
+          points: number
+          allocated_by: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          event_id: string
+          recipient_user_id: string
+          points: number
+          allocated_by: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          event_id?: string
+          recipient_user_id?: string
+          points?: number
+          allocated_by?: string
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organizer_point_allocations_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "organizer_point_allocations_recipient_user_id_fkey"
+            columns: ["recipient_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "organizer_point_allocations_allocated_by_fkey"
+            columns: ["allocated_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
+      user_points: {
+        Row: {
+          id: string
+          user_id: string
+          event_id: string | null
+          kind: Database["public"]["Enums"]["point_kind"]
+          points: number
+          earned_reason: string | null
+          created_at: string
+          created_by: string | null
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          event_id?: string | null
+          kind: Database["public"]["Enums"]["point_kind"]
+          points: number
+          earned_reason?: string | null
+          created_at?: string
+          created_by?: string | null
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          event_id?: string | null
+          kind?: Database["public"]["Enums"]["point_kind"]
+          points?: number
+          earned_reason?: string | null
+          created_at?: string
+          created_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_points_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "user_points_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_points_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
       event_discussions: {
         Row: {
           author_id: string
@@ -422,6 +565,30 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      allocate_organizer_points: {
+        Args: { p_event_id: string; p_allocations: Json }
+        Returns: void
+      }
+      get_my_points_totals: {
+        Args: Record<PropertyKey, never>
+        Returns: { user_id: string; participation_points: number; organizer_points: number; total_points: number }[]
+      }
+      admin_get_all_points_totals: {
+        Args: Record<PropertyKey, never>
+        Returns: { user_id: string; participation_points: number; organizer_points: number; total_points: number }[]
+      }
+      is_event_leader: {
+        Args: { event: string; uid: string }
+        Returns: boolean
+      }
+      checked_in_count: {
+        Args: { p_event_id: string }
+        Returns: number
+      }
+      is_admin: {
+        Args: { uid: string }
+        Returns: boolean
+      }
       approve_organizer_application: {
         Args: { application_id: string }
         Returns: boolean
@@ -433,6 +600,10 @@ export type Database = {
       has_role: {
         Args: { user_id: string; role_name: string }
         Returns: boolean
+      }
+      find_user_id_by_email: {
+        Args: { p_email: string }
+        Returns: string | null
       }
     }
     Enums: {
@@ -461,7 +632,9 @@ export type Database = {
         | "paid"
         | "checked_in"
         | "cancelled"
-      user_role: "user" | "organizer"
+      user_role: "user" | "organizer" | "admin"
+      organizer_role: "leader" | "member"
+      point_kind: "participation" | "organizer"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -617,7 +790,7 @@ export const Constants = {
         "checked_in",
         "cancelled",
       ],
-      user_role: ["user", "organizer"],
+      user_role: ["user", "organizer", "admin"],
     },
   },
 } as const

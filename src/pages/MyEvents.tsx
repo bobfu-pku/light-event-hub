@@ -23,6 +23,7 @@ interface Event {
   is_paid: boolean;
   price?: number;
   cover_image_url?: string;
+  role?: 'leader' | 'member';
 }
 
 interface Registration {
@@ -65,13 +66,50 @@ const MyEvents = () => {
 
     try {
       const { data, error } = await supabase
+        .from('event_organizers')
+        .select(`
+          role,
+          events:event_id(
+            id,
+            title,
+            description,
+            event_type,
+            start_time,
+            end_time,
+            location,
+            status,
+            max_participants,
+            is_paid,
+            price,
+            cover_image_url,
+            created_at
+          )
+        `)
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false, foreignTable: 'events' } as any);
+
+      if (error) throw error;
+      const membershipEvents = (data || []).map((row: any) => ({ ...row.events, role: row.role }));
+
+      // Fallback: also include events where I'm the organizer directly (in case membership wasn't created)
+      const { data: ownEvents, error: ownError } = await supabase
         .from('events')
-        .select('*')
+        .select(
+          `id, title, description, event_type, start_time, end_time, location, status, max_participants, is_paid, price, cover_image_url, created_at`
+        )
         .eq('organizer_id', user.id)
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
-      setMyEvents(data || []);
+      if (ownError) throw ownError;
+
+      const ownEventsWithRole = (ownEvents || []).map((e: any) => ({ ...e, role: 'leader' as const }));
+
+      // Merge by unique id, prefer membership role if present
+      const byId = new Map<string, any>();
+      for (const e of membershipEvents) byId.set(e.id, e);
+      for (const e of ownEventsWithRole) if (!byId.has(e.id)) byId.set(e.id, e);
+
+      setMyEvents(Array.from(byId.values()));
     } catch (error) {
       console.error('Error fetching my events:', error);
     }
@@ -341,26 +379,28 @@ const MyEvents = () => {
         </TabsList>
 
         <TabsContent value="organized" className="mt-6">
-          {!isOrganizer ? (
-            <div className="text-center py-12">
-              <Calendar className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <p className="text-muted-foreground mb-4">您还不是活动主办方，成为主办方后可以发布活动</p>
-              <Link to="/become-organizer">
-                <Button className="bg-gradient-primary hover:opacity-90">
-                  成为主办方
-                </Button>
-              </Link>
-            </div>
-          ) : myEvents.length === 0 ? (
-            <div className="text-center py-12">
-              <Calendar className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <p className="text-muted-foreground mb-4">您还没有主办过任何活动</p>
-              <Link to="/events/create">
-                <Button className="bg-gradient-primary hover:opacity-90">
-                  创建第一个活动
-                </Button>
-              </Link>
-            </div>
+          {myEvents.length === 0 ? (
+            !isOrganizer ? (
+              <div className="text-center py-12">
+                <Calendar className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <p className="text-muted-foreground mb-4">您还不是活动主办方，成为主办方后可以发布活动</p>
+                <Link to="/become-organizer">
+                  <Button className="bg-gradient-primary hover:opacity-90">
+                    成为主办方
+                  </Button>
+                </Link>
+              </div>
+            ) : (
+              <div className="text-center py-12">
+                <Calendar className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <p className="text-muted-foreground mb-4">您还没有主办过任何活动</p>
+                <Link to="/events/create">
+                  <Button className="bg-gradient-primary hover:opacity-90">
+                    创建第一个活动
+                  </Button>
+                </Link>
+              </div>
+            )
           ) : (
             <>
               <div className="flex items-center gap-4 mb-6">
@@ -397,12 +437,19 @@ const MyEvents = () => {
                   
                   <CardContent className="p-4">
                     <div className="flex items-start justify-between mb-2">
-                      <Badge 
-                        variant={getStatusColor(getActualEventStatus(event)) as any}
-                        className="text-xs"
-                      >
-                        {getStatusLabel(getActualEventStatus(event))}
-                      </Badge>
+                      <div className="flex items-center gap-2">
+                        <Badge 
+                          variant={getStatusColor(getActualEventStatus(event)) as any}
+                          className="text-xs"
+                        >
+                          {getStatusLabel(getActualEventStatus(event))}
+                        </Badge>
+                        {event.role === 'member' && (
+                          <Badge variant="outline" className="text-xs">
+                            协助者
+                          </Badge>
+                        )}
+                      </div>
                       {event.is_paid ? (
                         <Badge variant="outline" className="text-xs">
                           ¥{event.price}
@@ -413,7 +460,6 @@ const MyEvents = () => {
                         </Badge>
                       )}
                     </div>
-                    
                     <h3 className="font-semibold text-lg mb-2 line-clamp-2">
                       {event.title}
                     </h3>
@@ -446,7 +492,7 @@ const MyEvents = () => {
                           查看
                         </Button>
                       </Link>
-                      {getActualEventStatus(event) === 'draft' ? (
+                      {getActualEventStatus(event) === 'draft' && event.role !== 'member' ? (
                         <Link to={`/events/create?id=${event.id}`} className="flex-1">
                           <Button size="sm" className="w-full">
                             <Settings className="h-4 w-4 mr-2" />

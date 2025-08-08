@@ -56,6 +56,7 @@ const EventDetail = () => {
   const [loading, setLoading] = useState(true);
   const [registering, setRegistering] = useState(false);
   const [activeTab, setActiveTab] = useState('details');
+  const [organizers, setOrganizers] = useState<{ user_id: string; role: 'leader' | 'member'; nickname?: string | null }[]>([]);
 
   useEffect(() => {
     if (id) {
@@ -63,6 +64,7 @@ const EventDetail = () => {
       if (user) {
         checkRegistration();
       }
+      fetchOrganizers();
     }
   }, [id, user]);
 
@@ -102,6 +104,25 @@ const EventDetail = () => {
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchOrganizers = async () => {
+    if (!id) return;
+    try {
+      const { data, error } = await supabase
+        .from('event_organizers')
+        .select('user_id, role, profiles:user_id(nickname)')
+        .eq('event_id', id);
+      if (error) throw error;
+      const list = (data || []).map((row: any) => ({
+        user_id: row.user_id,
+        role: row.role,
+        nickname: row.profiles?.nickname ?? null,
+      }));
+      setOrganizers(list);
+    } catch (e) {
+      console.error('Error loading organizers', e);
     }
   };
 
@@ -594,6 +615,20 @@ const EventDetail = () => {
                 </div>
               )}
 
+              {organizers.length > 0 && (
+                <div className="pt-2">
+                  <div className="text-sm font-medium mb-2">组织团队</div>
+                  <div className="space-y-1 text-sm text-muted-foreground">
+                    {organizers
+                      .sort((a, b) => (a.role === 'leader' ? -1 : 1))
+                      .map((o) => (
+                        <div key={o.user_id}>
+                          {o.role === 'leader' ? '负责人' : '成员'}：{o.nickname || o.user_id.slice(0, 6)}
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
           </div>

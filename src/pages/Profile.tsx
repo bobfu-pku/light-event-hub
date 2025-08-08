@@ -41,6 +41,8 @@ const Profile = () => {
   const [activeTab, setActiveTab] = useState('profile');
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [pointsTotals, setPointsTotals] = useState<{ participation_points: number; organizer_points: number; total_points: number } | null>(null);
+  const [pointsDetail, setPointsDetail] = useState<any[]>([]);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [changingPassword, setChangingPassword] = useState(false);
@@ -67,6 +69,7 @@ const Profile = () => {
   useEffect(() => {
     if (user) {
       fetchProfile();
+      fetchPoints();
     }
   }, [user]);
 
@@ -107,6 +110,32 @@ const Profile = () => {
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchPoints = async () => {
+    try {
+      const { data: totals, error: totalsError } = await supabase.rpc('get_my_points_totals' as any);
+      if (totalsError) throw totalsError;
+      if (Array.isArray(totals) && totals.length > 0) {
+        setPointsTotals({
+          participation_points: totals[0].participation_points,
+          organizer_points: totals[0].organizer_points,
+          total_points: totals[0].total_points,
+        });
+      } else {
+        setPointsTotals({ participation_points: 0, organizer_points: 0, total_points: 0 });
+      }
+
+      const { data: detail, error: detailError } = await supabase
+        .from('user_points')
+        .select('kind, points, event_id, created_at, earned_reason')
+        .eq('user_id', user?.id)
+        .order('created_at', { ascending: false });
+      if (detailError) throw detailError;
+      setPointsDetail(detail || []);
+    } catch (e) {
+      console.error('Error loading points', e);
     }
   };
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -511,6 +540,27 @@ const Profile = () => {
               </div>
             </CardContent>
           </Card>
+          <Card className="mt-6">
+            <CardHeader>
+              <CardTitle>积分统计</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="p-3 rounded-lg bg-muted">
+                  <div className="text-xs text-muted-foreground">参与积分</div>
+                  <div className="text-2xl font-bold">{pointsTotals?.participation_points ?? 0}</div>
+                </div>
+                <div className="p-3 rounded-lg bg-muted">
+                  <div className="text-xs text-muted-foreground">组织积分</div>
+                  <div className="text-2xl font-bold">{pointsTotals?.organizer_points ?? 0}</div>
+                </div>
+                <div className="p-3 rounded-lg bg-muted">
+                  <div className="text-xs text-muted-foreground">总积分</div>
+                  <div className="text-2xl font-bold">{pointsTotals?.total_points ?? 0}</div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="organizer" className="mt-6">
@@ -571,6 +621,27 @@ const Profile = () => {
 
         <TabsContent value="settings" className="mt-6">
           <div className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>我的积分明细</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm">
+                {pointsDetail.length === 0 ? (
+                  <div className="text-muted-foreground">暂无积分记录</div>
+                ) : (
+                  pointsDetail.map((p, idx) => (
+                    <div key={idx} className="flex items-center justify-between">
+                      <div className="text-muted-foreground">
+                        {p.kind === 'participation' ? '参与积分' : '组织积分'}
+                        {p.earned_reason ? ` · ${p.earned_reason}` : ''}
+                      </div>
+                      <div className="font-medium">+{p.points}</div>
+                    </div>
+                  ))
+                )}
+              </CardContent>
+            </Card>
+
             <Card>
               <CardHeader>
                 <CardTitle>通知设置</CardTitle>

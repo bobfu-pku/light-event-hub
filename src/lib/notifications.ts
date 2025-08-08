@@ -8,6 +8,8 @@ export type NotificationType =
   | 'organizer_application'    // 主办方申请（管理员收到）
   | 'organizer_approved'       // 主办方申请通过（申请者收到）
   | 'organizer_rejected'       // 主办方申请被拒（申请者收到）
+  | 'organizer_member_added'   // 被添加为协助者
+  | 'organizer_member_removed' // 被移除协助者
   | 'discussion_reply'         // 讨论回复
   | 'event_review'             // 活动评价（主办方收到）
   | 'event_review_reminder'    // 活动评价提醒
@@ -75,13 +77,42 @@ export const createEventRegistrationNotification = async (
   participantName: string,
   eventId?: string
 ) => {
-  await createNotification({
-    userId: organizerId,
-    title: '新的报名申请',
-    content: `${participantName} 报名了您的活动"${eventTitle}"`,
-    type: 'event_registration',
-    relatedEventId: eventId
-  });
+  try {
+    const recipients: string[] = [];
+    if (eventId) {
+      const { data: team, error } = await supabase
+        .from('event_organizers')
+        .select('user_id')
+        .eq('event_id', eventId);
+      if (!error && Array.isArray(team)) {
+        recipients.push(...team.map((t: any) => t.user_id));
+      }
+    }
+    if (!recipients.includes(organizerId)) recipients.push(organizerId);
+
+    const notifications = recipients.map((uid) => ({
+      user_id: uid,
+      title: '新的报名申请',
+      content: `${participantName} 报名了您的活动"${eventTitle}"`,
+      type: 'event_registration' as NotificationType,
+      related_event_id: eventId || null,
+      is_read: false,
+    }));
+
+    if (notifications.length > 0) {
+      const { error: insertError } = await supabase.from('notifications').insert(notifications);
+      if (insertError) throw insertError;
+    }
+  } catch (e) {
+    // fallback: at least notify organizerId
+    await createNotification({
+      userId: organizerId,
+      title: '新的报名申请',
+      content: `${participantName} 报名了您的活动"${eventTitle}"`,
+      type: 'event_registration',
+      relatedEventId: eventId
+    });
+  }
 };
 
 /**
@@ -182,6 +213,40 @@ export const createEventReviewReminderNotification = async (
     content: `您参加的活动"${eventTitle}"已结束，邀请您分享参与体验和感受`,
     type: 'event_review_reminder',
     relatedEventId: eventId
+  });
+};
+
+/**
+ * 被添加为活动协助者通知
+ */
+export const createOrganizerMemberAddedNotification = async (
+  userId: string,
+  eventTitle: string,
+  eventId?: string
+) => {
+  await createNotification({
+    userId,
+    title: '加入组织团队',
+    content: `您已被添加为活动"${eventTitle}"的协助者`,
+    type: 'organizer_member_added',
+    relatedEventId: eventId,
+  });
+};
+
+/**
+ * 被移出活动协助者通知
+ */
+export const createOrganizerMemberRemovedNotification = async (
+  userId: string,
+  eventTitle: string,
+  eventId?: string
+) => {
+  await createNotification({
+    userId,
+    title: '被移出组织团队',
+    content: `您已被移出活动"${eventTitle}"的协助者`,
+    type: 'organizer_member_removed',
+    relatedEventId: eventId,
   });
 };
 
@@ -322,10 +387,39 @@ export const createEventCancelledNotification = async (
  */
 export const getAdminUserIds = async (): Promise<string[]> => {
   try {
-    // 如果管理员是通过特定用户ID或其他字段定义的，需要相应调整查询
-    // 这里暂时返回空数组，需要根据具体的管理员定义方式来实现
-    console.log('获取管理员列表：暂时返回空数组，需要根据实际管理员定义方式实现');
-    return [];
+    // 优先通过角色查询管理员
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('user_id, roles, contact_email')
+      .contains('roles', ['admin']);
+
+    if (error) {
+      console.error('获取管理员列表失败:', error);
+    }
+
+    const adminIds = (data || [])
+      .filter((row: any) => Array.isArray(row.roles) && row.roles.includes('admin'))
+      .map((row: any) => row.user_id);
+
+    // 如果查询不到，兜底尝试指定邮箱（与迁移脚本保持一致）
+    if (adminIds.length === 0) {
+      const fallbackEmail = 'bomingfu@foxmail.com';
+      const { data: fallback, error: fbErr } = await supabase
+        .from('profiles')
+        .select('user_id')
+        .eq('contact_email', fallbackEmail)
+        .limit(1);
+
+      if (fbErr) {
+        console.error('管理员邮箱兜底查询失败:', fbErr);
+      }
+
+      if (fallback && fallback.length > 0) {
+        return [fallback[0].user_id];
+      }
+    }
+
+    return adminIds;
   } catch (error) {
     console.error('获取管理员列表失败:', error);
     return [];

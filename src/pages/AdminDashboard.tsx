@@ -53,6 +53,7 @@ const AdminDashboard = () => {
   const [adminNotes, setAdminNotes] = useState('');
   const [reviewing, setReviewing] = useState(false);
   const [activeTab, setActiveTab] = useState('events');
+  const [pointsRows, setPointsRows] = useState<{ user_id: string; participation_points: number; organizer_points: number; total_points: number; nickname?: string | null }[]>([]);
 
   useEffect(() => {
     // 等待认证状态加载完成
@@ -87,7 +88,7 @@ const AdminDashboard = () => {
   // 处理URL参数设置默认tab
   useEffect(() => {
     const tab = searchParams.get('tab');
-    if (tab && ['events', 'applications'].includes(tab)) {
+    if (tab && ['events', 'applications', 'points'].includes(tab)) {
       setActiveTab(tab);
     }
   }, [searchParams]);
@@ -177,6 +178,107 @@ const AdminDashboard = () => {
       })) || [];
       
       setEvents(formattedEvents);
+
+      // 积分汇总
+      try {
+        const { data: totals, error: totalsError } = await supabase.rpc('admin_get_all_points_totals' as any);
+        if (totalsError) throw totalsError;
+        const rows = (totals as any[] | null) || [];
+
+        if (!rows.length) {
+          // 若无行（可能因函数限制返回空），使用客户端汇总回退，确保展示所有用户
+          const [{ data: profilesData }, { data: userPointsData }] = await Promise.all([
+            supabase.from('profiles').select('user_id, nickname'),
+            supabase.from('user_points').select('user_id, kind, points'),
+          ]);
+          const totalsMap = new Map<string, { user_id: string; participation_points: number; organizer_points: number; total_points: number; nickname: string | null }>();
+          for (const p of profilesData || []) {
+            totalsMap.set(p.user_id, {
+              user_id: p.user_id,
+              participation_points: 0,
+              organizer_points: 0,
+              total_points: 0,
+              nickname: p.nickname || null,
+            });
+          }
+          for (const up of userPointsData || []) {
+            const current = totalsMap.get(up.user_id) || {
+              user_id: up.user_id,
+              participation_points: 0,
+              organizer_points: 0,
+              total_points: 0,
+              nickname: null,
+            };
+            if (up.kind === 'participation') current.participation_points += up.points || 0;
+            if (up.kind === 'organizer') current.organizer_points += up.points || 0;
+            current.total_points = (current.participation_points || 0) + (current.organizer_points || 0);
+            totalsMap.set(up.user_id, current);
+          }
+          const aggregated = Array.from(totalsMap.values());
+          aggregated.sort((a, b) => {
+            if (b.total_points !== a.total_points) return b.total_points - a.total_points;
+            return b.participation_points - a.participation_points;
+          });
+          setPointsRows(aggregated);
+          return;
+        }
+
+        // 补充昵称并排序（RPC 成功且有数据时）
+        const userIds = rows.map((r: any) => r.user_id);
+        const { data: profileRows } = await supabase
+          .from('profiles')
+          .select('user_id, nickname')
+          .in('user_id', userIds);
+        const idToNickname = new Map<string, string | null>();
+        for (const p of profileRows || []) {
+          idToNickname.set(p.user_id, p.nickname || null);
+        }
+        const enriched = rows.map((r: any) => ({
+          ...r,
+          nickname: idToNickname.get(r.user_id) ?? null,
+        }));
+        enriched.sort((a: any, b: any) => {
+          if (b.total_points !== a.total_points) return b.total_points - a.total_points;
+          return (b.participation_points || 0) - (a.participation_points || 0);
+        });
+        setPointsRows(enriched);
+      } catch (e) {
+        console.warn('Failed to load points totals via RPC, falling back to client aggregation', e);
+        // 备用方案：客户端汇总，包含所有注册用户（0 分也显示）
+        const [{ data: profilesData }, { data: userPointsData }] = await Promise.all([
+          supabase.from('profiles').select('user_id, nickname'),
+          supabase.from('user_points').select('user_id, kind, points'),
+        ]);
+        const totalsMap = new Map<string, { user_id: string; participation_points: number; organizer_points: number; total_points: number; nickname: string | null }>();
+        for (const p of profilesData || []) {
+          totalsMap.set(p.user_id, {
+            user_id: p.user_id,
+            participation_points: 0,
+            organizer_points: 0,
+            total_points: 0,
+            nickname: p.nickname || null,
+          });
+        }
+        for (const up of userPointsData || []) {
+          const current = totalsMap.get(up.user_id) || {
+            user_id: up.user_id,
+            participation_points: 0,
+            organizer_points: 0,
+            total_points: 0,
+            nickname: null,
+          };
+          if (up.kind === 'participation') current.participation_points += up.points || 0;
+          if (up.kind === 'organizer') current.organizer_points += up.points || 0;
+          current.total_points = (current.participation_points || 0) + (current.organizer_points || 0);
+          totalsMap.set(up.user_id, current);
+        }
+        const aggregated = Array.from(totalsMap.values());
+        aggregated.sort((a, b) => {
+          if (b.total_points !== a.total_points) return b.total_points - a.total_points;
+          return b.participation_points - a.participation_points;
+        });
+        setPointsRows(aggregated);
+      }
       
     } catch (error) {
       console.error('Error fetching admin data:', error);
@@ -357,6 +459,7 @@ const AdminDashboard = () => {
               <span className="absolute -top-1 -right-1 h-2 w-2 bg-red-500 rounded-full"></span>
             )}
           </TabsTrigger>
+          <TabsTrigger value="points">积分统计</TabsTrigger>
         </TabsList>
 
         <TabsContent value="events" className="space-y-6">
@@ -574,6 +677,73 @@ const AdminDashboard = () => {
                           >
                             审核申请
                           </Button>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </>
+          )}
+        </TabsContent>
+
+        <TabsContent value="points" className="space-y-6">
+          {pointsRows.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">暂无积分数据</div>
+          ) : (
+            <>
+              {/* 桌面端表格布局 */}
+              <div className="hidden md:block">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-16">排名</TableHead>
+                      <TableHead>用户</TableHead>
+                      <TableHead>参与积分</TableHead>
+                      <TableHead>组织积分</TableHead>
+                      <TableHead>总积分</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {pointsRows.map((r, idx) => (
+                      <TableRow key={r.user_id}>
+                        <TableCell>{idx + 1}</TableCell>
+                        <TableCell>{r.nickname || r.user_id.slice(0, 6)}</TableCell>
+                        <TableCell>{r.participation_points}</TableCell>
+                        <TableCell>{r.organizer_points}</TableCell>
+                        <TableCell>{r.total_points}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+
+              {/* 移动端卡片布局 */}
+              <div className="md:hidden space-y-3">
+                {pointsRows.map((r, idx) => (
+                  <Card key={r.user_id} className="border border-border">
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm text-muted-foreground">排名</span>
+                          <span className="text-lg font-semibold">{idx + 1}</span>
+                        </div>
+                        <Badge variant="outline">总积分 {r.total_points}</Badge>
+                      </div>
+                      <div className="text-sm">
+                        <div className="mb-1">
+                          <span className="text-muted-foreground">用户：</span>
+                          <span className="text-foreground">{r.nickname || r.user_id.slice(0, 6)}</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <span className="text-muted-foreground">参与：</span>
+                            <span className="text-foreground">{r.participation_points}</span>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">组织：</span>
+                            <span className="text-foreground">{r.organizer_points}</span>
+                          </div>
                         </div>
                       </div>
                     </CardContent>
